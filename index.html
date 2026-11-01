@@ -110,7 +110,7 @@ label.row{flex-direction:row;align-items:center;gap:10px}
       <span class="tiny">Free key: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Key sirf is browser mein save hoti hai.</span>
     </label>
     <label>Model
-      <input id="model" type="text" value="gemini-2.5-flash">
+      <input id="model" type="text" value="gemini-flash-latest">
     </label>
     <label>Bolne ki bhasha
       <select id="lang">
@@ -135,6 +135,9 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}
   };
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(store.get('jv_model','') === 'gemini-2.5-flash') store.set('jv_model','gemini-flash-latest');
+  var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
+  function useRecordMode(){ return !SR || IOS || store.get('jv_record','') === '1'; }
   var history = [], rec = null, busy = false, speaking = false, hands = false, awaitUntil = 0, wakeLock = null;
 
   var SYSTEM = "Tum Arise ho, ek smart aur friendly voice assistant jo user ke commands follow karta hai. " +
@@ -274,7 +277,7 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     while(history.length && !(history[0].role === 'user' && history[0].parts[0] && history[0].parts[0].text)) history.shift();
   }
   async function callGemini(){
-    var key = store.get('jv_key',''), model = store.get('jv_model','gemini-2.5-flash');
+    var key = store.get('jv_key',''), model = store.get('jv_model','gemini-flash-latest');
     var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
       method:'POST',
       headers:{'Content-Type':'application/json','x-goog-api-key':key},
@@ -382,7 +385,8 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     };
     r.onerror = function(e){
       if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
-        add('sys err','Mic ki permission nahi mili. Browser mein mic allow karo.');
+        store.set('jv_record','1');
+        add('sys err','Is device ka voice recognition band hai (' + e.error + '). Dusra tarika on kar diya hai: orb dobara dabao.');
         hands = false; syncHands();
       } else if(e.error !== 'no-speech' && e.error !== 'aborted'){
         add('sys err','Voice error: ' + e.error);
@@ -399,6 +403,92 @@ label.row{flex-direction:row;align-items:center;gap:10px}
       }
     };
     try{ r.start(); }catch(e){ rec = null; setState('idle','Ready'); }
+  }
+
+  /* ---------- fallback: record audio, Gemini turns it into text ---------- */
+  var recorder = null, transcribing = false;
+  /*ENC_START*/
+  function toWav16k(chunks, rate){
+    var total = 0, i, j;
+    for(i=0;i<chunks.length;i++) total += chunks[i].length;
+    var all = new Float32Array(total), off = 0;
+    for(i=0;i<chunks.length;i++){ all.set(chunks[i], off); off += chunks[i].length; }
+    var ratio = rate / 16000, outLen = Math.floor(total / ratio);
+    var pcm = new Int16Array(outLen);
+    for(i=0;i<outLen;i++){
+      var a = Math.floor(i * ratio), b = Math.min(total, Math.floor((i + 1) * ratio)), sum = 0, n = 0;
+      for(j=a;j<b;j++){ sum += all[j]; n++; }
+      var v = n ? sum / n : 0;
+      v = Math.max(-1, Math.min(1, v));
+      pcm[i] = v < 0 ? v * 32768 : v * 32767;
+    }
+    var buf = new ArrayBuffer(44 + pcm.length * 2), dv = new DataView(buf);
+    function str(o, t){ for(var k=0;k<t.length;k++) dv.setUint8(o + k, t.charCodeAt(k)); }
+    str(0,'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8,'WAVE'); str(12,'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, 16000, true); dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    str(36,'data'); dv.setUint32(40, pcm.length * 2, true);
+    for(i=0;i<pcm.length;i++) dv.setInt16(44 + i * 2, pcm[i], true);
+    return new Uint8Array(buf);
+  }
+  function toBase64(bytes){
+    var bin = '', step = 0x8000;
+    for(var i=0;i<bytes.length;i+=step) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+    return btoa(bin);
+  }
+  /*ENC_END*/
+  async function transcribe(b64){
+    var key = store.get('jv_key',''), model = store.get('jv_model','gemini-flash-latest');
+    var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-goog-api-key':key},
+      body:JSON.stringify({contents:[{role:'user',parts:[
+        {inline_data:{mime_type:'audio/wav',data:b64}},
+        {text:'Is audio mein jo bola gaya hai use shabd ba shabd transcribe karo. Hindi ho toh Roman script (Hinglish) mein likho. Sirf transcript do. Agar kuch saaf sunai nahi diya toh sirf ye likho: NONE'}
+      ]}]})
+    });
+    var data = await res.json().catch(function(){return {}});
+    if(!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
+    var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+    return parts.map(function(p){return p.text||''}).join('').trim();
+  }
+  async function recordAndSend(){
+    if(recorder){ recorder.stop(); return; }
+    if(transcribing || busy) return;
+    if(!store.get('jv_key','')){ $('#settings').hidden = false; add('sys err','Pehle Settings mein Gemini API key daalo.'); return; }
+    if(window.speechSynthesis) speechSynthesis.cancel();
+    var stream;
+    try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ add('sys err','Mic nahi khula (' + (e.name || 'error') + '). Browser mein mic Allow karo.'); return; }
+    var AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
+    try{ if(ctx.state === 'suspended') await ctx.resume(); }catch(e){}
+    var src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1);
+    var chunks = [], heard = false, quiet = 0, secs = 0, done = false, rate = ctx.sampleRate;
+    function finish(){
+      if(done) return; done = true; recorder = null;
+      try{ proc.disconnect(); src.disconnect(); }catch(e){}
+      stream.getTracks().forEach(function(t){ t.stop(); });
+      try{ ctx.close(); }catch(e){}
+      if(!heard){ add('sys','Kuch sunai nahi diya. Orb dabake dobara bolo.'); setState('idle','Ready. Orb dabao aur bolo'); return; }
+      transcribing = true; setState('thinking','Samajh raha hoon...');
+      transcribe(toBase64(toWav16k(chunks, rate))).then(function(t){
+        transcribing = false;
+        if(!t || /^NONE\b/i.test(t)){ add('sys','Awaaz saaf nahi aayi. Dobara bolo.'); setState('idle','Ready. Orb dabao aur bolo'); return; }
+        handle(t);
+      }).catch(function(err){
+        transcribing = false; add('sys err', err.message || String(err)); setState('idle','Ready. Orb dabao aur bolo');
+      });
+    }
+    proc.onaudioprocess = function(e){
+      var d = e.inputBuffer.getChannelData(0), copy = new Float32Array(d), sum = 0, i;
+      chunks.push(copy); secs += copy.length / rate;
+      for(i=0;i<copy.length;i++) sum += copy[i] * copy[i];
+      if(Math.sqrt(sum / copy.length) > 0.02){ heard = true; quiet = 0; } else if(heard){ quiet += copy.length / rate; }
+      if(quiet > 1.3 || secs > 15) finish();
+    };
+    src.connect(proc); proc.connect(ctx.destination);
+    recorder = {stop:finish};
+    setState('listening','Sun raha hoon... bolo (rukne pe apne aap bhej dunga)');
   }
 
   function syncHands(){
@@ -418,17 +508,19 @@ label.row{flex-direction:row;align-items:center;gap:10px}
 
   /* ---------- settings + wiring ---------- */
   function loadSettings(){
-    $('#key').value = store.get('jv_key',''); $('#model').value = store.get('jv_model','gemini-2.5-flash');
+    $('#key').value = store.get('jv_key',''); $('#model').value = store.get('jv_model','gemini-flash-latest');
     $('#lang').value = store.get('jv_lang','hi-IN'); $('#speak').checked = store.get('jv_speak','1') === '1';
   }
   function saveSettings(){
-    store.set('jv_key', $('#key').value.trim()); store.set('jv_model', $('#model').value.trim() || 'gemini-2.5-flash');
+    store.set('jv_key', $('#key').value.trim()); store.set('jv_model', $('#model').value.trim() || 'gemini-flash-latest');
     store.set('jv_lang', $('#lang').value); store.set('jv_speak', $('#speak').checked ? '1' : '0');
     $('#settings').hidden = true; idleOrHands();
   }
 
   $('#orb').addEventListener('click', function(){
+    if(recorder){ recorder.stop(); return; }
     if(hands) return;
+    if(useRecordMode()){ recordAndSend(); return; }
     if(document.body.dataset.state === 'listening' && rec){ try{ rec.stop(); }catch(e){} return; }
     startRec(false);
   });
