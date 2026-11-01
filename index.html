@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Arise</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#050a12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Arise">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+/* Layout: single-column HUD. Orb + hands-free toggle on top, transcript in the middle, input bar at the bottom. */
+:root{
+  --bg:#050a12; --panel:#0b1422; --line:#17304a; --fg:#d8f3ff; --dim:#6f93ab;
+  --cyan:#3ee0ff; --amber:#ffb23e; --danger:#ff7b7b; --live:var(--cyan);
+  --display:'Rajdhani',system-ui,sans-serif; --mono:'Share Tech Mono',ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:radial-gradient(120% 70% at 50% 0%,#0a1d33 0,var(--bg) 60%) var(--bg);
+  color:var(--fg); font:500 17px/1.45 var(--display);
+  display:flex; flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:max(12px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-bottom,0px));
+}
+body[data-state=listening]{--live:var(--amber)}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{margin:0;font-size:22px;letter-spacing:.35em;font-weight:700;color:var(--cyan)}
+.tiny{font:12px var(--mono);color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
+button,input,select{font:inherit;color:inherit}
+.ghost{background:none;border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer;font:13px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.ghost:hover,.ghost:focus-visible{border-color:var(--cyan);color:var(--cyan);outline:none}
+.ghost[aria-pressed=true]{border-color:var(--amber);color:var(--amber);box-shadow:0 0 14px rgba(255,178,62,.35)}
+
+.stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0 6px}
+.orb{position:relative;width:min(42vw,170px);aspect-ratio:1;border:0;background:none;cursor:pointer;padding:0;border-radius:50%}
+.orb:focus-visible{outline:2px solid var(--live);outline-offset:6px}
+.orb i{position:absolute;border-radius:50%;display:block}
+.orb i:nth-child(1){inset:0;border:2px dashed var(--live);opacity:.55;animation:spin 24s linear infinite}
+.orb i:nth-child(2){inset:12%;border:6px solid var(--line);border-top-color:var(--live);border-bottom-color:var(--live);animation:spin 7s linear infinite reverse}
+.orb i:nth-child(3){inset:30%;background:radial-gradient(circle,var(--live) 0,rgba(62,224,255,.12) 72%);box-shadow:0 0 44px var(--live);animation:breathe 3.2s ease-in-out infinite}
+body[data-state=thinking] .orb i:nth-child(2){animation-duration:1.2s}
+body[data-state=listening] .orb i:nth-child(3){animation-duration:.9s}
+body[data-state=speaking] .orb i:nth-child(3){animation-duration:.6s}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes breathe{50%{transform:scale(1.14);opacity:.8}}
+#status{min-height:1.4em;text-align:center;max-width:100%;overflow-wrap:anywhere}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:4px 0}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px;cursor:pointer}
+.chip:hover,.chip:focus-visible{border-color:var(--cyan);outline:none}
+
+#log{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:8px 2px}
+.msg{max-width:88%;padding:9px 13px;border:1px solid var(--line);background:var(--panel);border-radius:10px;overflow-wrap:anywhere;white-space:pre-wrap}
+.msg.me{align-self:flex-end;border-color:#25507a}
+.msg.ai{align-self:flex-start;border-left:3px solid var(--cyan)}
+.msg.sys{align-self:center;font:13px var(--mono);color:var(--dim);background:none;border:0;text-align:center}
+.msg.err{color:var(--danger)}
+.msg.act{align-self:flex-start;font:13px var(--mono);color:var(--cyan);background:none;border:1px dashed var(--line)}
+.msg a{color:var(--cyan)}
+
+form{display:flex;gap:8px;padding-top:8px}
+form input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 13px}
+form input:focus-visible{outline:none;border-color:var(--cyan)}
+.send{background:var(--cyan);color:#021018;border:0;border-radius:8px;padding:0 18px;font-weight:700;letter-spacing:.08em;cursor:pointer}
+
+#settings{position:fixed;inset:0;background:rgba(2,6,12,.86);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}
+#settings[hidden]{display:none}
+.card{width:min(440px,100%);max-height:100%;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.card h2{margin:0;font-size:20px;letter-spacing:.2em;color:var(--cyan)}
+label{display:flex;flex-direction:column;gap:5px}
+label.row{flex-direction:row;align-items:center;gap:10px}
+.card input[type=password],.card input[type=text],.card select{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 11px;width:100%}
+.card a{color:var(--cyan)}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+@media (prefers-reduced-motion:reduce){.orb i{animation:none!important}}
+</style>
+</head>
+<body data-state="idle">
+<header>
+  <h1>ARISE</h1>
+  <button class="ghost" id="open-settings" type="button">Settings</button>
+</header>
+
+<section class="stage">
+  <button class="orb" id="orb" type="button" aria-label="Ek baar bolne ke liye dabao"><i></i><i></i><i></i></button>
+  <div id="status" class="tiny">Orb dabao aur bolo</div>
+  <button class="ghost" id="hands" type="button" aria-pressed="false">Hands-free: OFF</button>
+  <div class="chips" id="chips"></div>
+</section>
+
+<main id="log" aria-live="polite"></main>
+
+<form id="form" autocomplete="off">
+  <input id="text" type="text" placeholder="Ya yahan type karo..." aria-label="Message">
+  <button class="send" type="submit">SEND</button>
+</form>
+
+<div id="settings" hidden>
+  <div class="card" role="dialog" aria-label="Settings">
+    <h2>SETTINGS</h2>
+    <label>Gemini API key
+      <input id="key" type="password" placeholder="AIza..." autocomplete="off">
+      <span class="tiny">Free key: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Key sirf is browser mein save hoti hai.</span>
+    </label>
+    <label>Model
+      <input id="model" type="text" value="gemini-2.5-flash">
+    </label>
+    <label>Bolne ki bhasha
+      <select id="lang">
+        <option value="hi-IN">Hindi / Hinglish (hi-IN)</option>
+        <option value="en-IN">English India (en-IN)</option>
+        <option value="en-US">English US (en-US)</option>
+      </select>
+    </label>
+    <label class="row"><input id="speak" type="checkbox" checked> Jawab bolke sunao</label>
+    <div class="actions">
+      <button class="ghost" id="clear" type="button">Chat saaf karo</button>
+      <button class="ghost" id="save" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $ = function(s){return document.querySelector(s)};
+  var store = {
+    get:function(k,d){try{var v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}},
+    set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+  };
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var history = [], rec = null, busy = false, speaking = false, hands = false, awaitUntil = 0, wakeLock = null;
+
+  var SYSTEM = "Tum Arise ho, ek smart aur friendly voice assistant jo user ke commands follow karta hai. " +
+    "Jab user koi kaam bole (website kholna, search, YouTube, map, WhatsApp, call, email, timer, mausam, note, hisaab), tools use karo, sirf baat mat karo. " +
+    "User ki bhasha mein jawab do (Hinglish ho toh Hinglish). Kaam hone ke baad ek chhota confirmation do, 1 se 2 vaakya, kyunki jawab bolke sunaya jayega. " +
+    "Markdown, bullet points aur emoji mat use karo. Agar kisi kaam ke liye zaroori jaankari nahi hai (jaise phone number), user se poochho.";
+
+  var TOOLS = [{functionDeclarations:[
+    {name:'open_website',description:'Koi website kholo.',parameters:{type:'OBJECT',properties:{url:{type:'STRING',description:'Poora URL ya domain, jaise youtube.com'}},required:['url']}},
+    {name:'web_search',description:'Google pe search karo.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
+    {name:'youtube_play',description:'YouTube pe gana ya video dhoondo.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
+    {name:'open_maps',description:'Google Maps pe jagah ya route kholo.',parameters:{type:'OBJECT',properties:{destination:{type:'STRING'}},required:['destination']}},
+    {name:'whatsapp_message',description:'WhatsApp message taiyaar karke kholo. to = saved contact ka naam ya phone number.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'},message:{type:'STRING'}},required:['message']}},
+    {name:'phone_call',description:'Call lagao. to = saved contact ka naam ya phone number.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'}},required:['to']}},
+    {name:'send_email',description:'Gmail mein email likhna shuru karo.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'},subject:{type:'STRING'},body:{type:'STRING'}},required:['body']}},
+    {name:'save_contact',description:'Naam aur phone number save karo taaki baad mein "Mummy ko call karo" chal sake.',parameters:{type:'OBJECT',properties:{name:{type:'STRING'},phone:{type:'STRING'}},required:['name','phone']}},
+    {name:'set_timer',description:'Timer ya alarm lagao.',parameters:{type:'OBJECT',properties:{seconds:{type:'NUMBER'},label:{type:'STRING'}},required:['seconds']}},
+    {name:'save_note',description:'Yaaddasht save karo.',parameters:{type:'OBJECT',properties:{text:{type:'STRING'}},required:['text']}},
+    {name:'read_notes',description:'Saved yaaddashten sunao.',parameters:{type:'OBJECT',properties:{}}},
+    {name:'get_weather',description:'Kisi sheher ka abhi ka mausam batao.',parameters:{type:'OBJECT',properties:{city:{type:'STRING'}},required:['city']}},
+    {name:'calculate',description:'Hisaab karo. Sirf numbers aur + - * / % ( ) ^ allowed.',parameters:{type:'OBJECT',properties:{expression:{type:'STRING'}},required:['expression']}},
+    {name:'current_time',description:'Abhi ka time aur date batao.',parameters:{type:'OBJECT',properties:{}}}
+  ]}];
+
+  /* ---------- UI helpers ---------- */
+  function setState(s, text){ document.body.dataset.state = s; if(text) $('#status').textContent = text; }
+  function add(kind, text){
+    var d = document.createElement('div'); d.className = 'msg ' + kind; d.textContent = text;
+    $('#log').appendChild(d); $('#log').scrollTop = $('#log').scrollHeight; return d;
+  }
+  function openLink(label, url){
+    var d = add('sys', label + ' ');
+    var a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Kholo';
+    d.appendChild(a);
+    try{ window.open(url, '_blank', 'noopener'); }catch(e){}
+    $('#log').scrollTop = $('#log').scrollHeight;
+  }
+  function beep(){
+    try{
+      var C = window.AudioContext || window.webkitAudioContext, c = new C(), t = 0;
+      for(var i=0;i<4;i++){
+        var o = c.createOscillator(), g = c.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(c.destination);
+        g.gain.setValueAtTime(0.25, c.currentTime + t); g.gain.setValueAtTime(0, c.currentTime + t + 0.2);
+        o.start(c.currentTime + t); o.stop(c.currentTime + t + 0.25); t += 0.4;
+      }
+    }catch(e){}
+  }
+
+  /* ---------- tools ---------- */
+  function phoneFrom(to){
+    var contacts = {}; try{ contacts = JSON.parse(store.get('jv_contacts','{}')); }catch(e){}
+    var key = (to||'').toLowerCase().trim();
+    if(contacts[key]) return contacts[key];
+    var digits = (to||'').replace(/[^\d+]/g,'');
+    if(digits.replace(/\D/g,'').length >= 10){
+      if(digits[0] === '+') return digits.slice(1);
+      return digits.length === 10 ? '91' + digits : digits;
+    }
+    return null;
+  }
+  var tools = {
+    open_website:function(a){
+      var u = /^https?:\/\//i.test(a.url) ? a.url : 'https://' + a.url;
+      openLink('Website:', u); return {status:'opened', url:u};
+    },
+    web_search:function(a){ openLink('Google:', 'https://www.google.com/search?q=' + encodeURIComponent(a.query)); return {status:'opened'}; },
+    youtube_play:function(a){ openLink('YouTube:', 'https://www.youtube.com/results?search_query=' + encodeURIComponent(a.query)); return {status:'opened'}; },
+    open_maps:function(a){ openLink('Maps:', 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(a.destination)); return {status:'opened'}; },
+    whatsapp_message:function(a){
+      var p = a.to ? phoneFrom(a.to) : '';
+      if(a.to && !p) return {error:'Is naam ka number save nahi hai. User se number poochho, phir save_contact use karo.'};
+      openLink('WhatsApp:', 'https://wa.me/' + (p||'') + '?text=' + encodeURIComponent(a.message));
+      return {status:'WhatsApp khul gaya, user ko bas send dabana hai.'};
+    },
+    phone_call:function(a){
+      var p = phoneFrom(a.to);
+      if(!p) return {error:'Is naam ka number save nahi hai. User se number poochho, phir save_contact use karo.'};
+      openLink('Call:', 'tel:+' + p); return {status:'dialer khul gaya'};
+    },
+    send_email:function(a){
+      var u = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(a.to||'') + '&su=' + encodeURIComponent(a.subject||'') + '&body=' + encodeURIComponent(a.body);
+      openLink('Gmail:', u); return {status:'email draft khul gaya'};
+    },
+    save_contact:function(a){
+      var contacts = {}; try{ contacts = JSON.parse(store.get('jv_contacts','{}')); }catch(e){}
+      var d = (a.phone||'').replace(/[^\d+]/g,''), digits = d.replace(/\D/g,'');
+      contacts[(a.name||'').toLowerCase().trim()] = d[0] === '+' ? digits : (digits.length === 10 ? '91' + digits : digits);
+      store.set('jv_contacts', JSON.stringify(contacts));
+      return {status:'saved', name:a.name};
+    },
+    set_timer:function(a){
+      var s = Math.max(1, Math.round(a.seconds)), label = a.label || 'Timer';
+      setTimeout(function(){
+        beep(); add('ai', label + ' khatam ho gaya.');
+        if(!speaking) speak(label + ' khatam ho gaya.');
+      }, s * 1000);
+      add('act', 'Timer set: ' + label + ' (' + (s >= 60 ? Math.round(s/60) + ' min' : s + ' sec') + ')');
+      return {status:'timer set', seconds:s};
+    },
+    save_note:function(a){
+      var n = []; try{ n = JSON.parse(store.get('jv_notes','[]')); }catch(e){}
+      n.push({text:a.text, at:new Date().toLocaleString('en-IN')});
+      store.set('jv_notes', JSON.stringify(n));
+      add('act', 'Note saved: ' + a.text); return {status:'saved', total:n.length};
+    },
+    read_notes:function(){
+      var n = []; try{ n = JSON.parse(store.get('jv_notes','[]')); }catch(e){}
+      return {notes:n.slice(-10)};
+    },
+    get_weather:async function(a){
+      var g = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name=' + encodeURIComponent(a.city))).json();
+      if(!g.results || !g.results.length) return {error:'Sheher nahi mila'};
+      var r = g.results[0];
+      var w = await (await fetch('https://api.open-meteo.com/v1/forecast?latitude=' + r.latitude + '&longitude=' + r.longitude + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code')).json();
+      return {city:r.name, country:r.country, current:w.current, units:w.current_units};
+    },
+    calculate:function(a){
+      var e = String(a.expression||'').replace(/\^/g,'**').replace(/x/gi,'*');
+      if(!/^[\d\s+\-*\/%().]+$/.test(e)) return {error:'Sirf numbers aur operators allowed hain'};
+      try{ return {result:Function('"use strict";return (' + e + ')')()}; }catch(x){ return {error:'Hisaab samajh nahi aaya'}; }
+    },
+    current_time:function(){
+      var n = new Date();
+      return {time:n.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}), date:n.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})};
+    }
+  };
+  async function runTool(name, args){
+    add('act', 'Kaam: ' + name);
+    if(!tools[name]) return {error:'Ye tool maujood nahi hai'};
+    try{ return await tools[name](args || {}); }catch(e){ return {error:String(e.message || e)}; }
+  }
+
+  /* ---------- Gemini ---------- */
+  function trimHistory(){
+    while(history.length > 30) history.shift();
+    while(history.length && !(history[0].role === 'user' && history[0].parts[0] && history[0].parts[0].text)) history.shift();
+  }
+  async function callGemini(){
+    var key = store.get('jv_key',''), model = store.get('jv_model','gemini-2.5-flash');
+    var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-goog-api-key':key},
+      body:JSON.stringify({systemInstruction:{parts:[{text:SYSTEM}]}, contents:history, tools:TOOLS})
+    });
+    var data = await res.json().catch(function(){return {}});
+    if(!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
+    return data;
+  }
+  async function ask(text){
+    if(!store.get('jv_key','')){ $('#settings').hidden = false; throw new Error('Pehle Settings mein Gemini API key daalo.'); }
+    var start = history.length;
+    history.push({role:'user',parts:[{text:text}]});
+    try{
+      for(var i=0;i<6;i++){
+        var data = await callGemini();
+        var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+        var calls = parts.filter(function(p){return p.functionCall});
+        if(!calls.length){
+          var reply = parts.map(function(p){return p.text||''}).join('').trim();
+          if(!reply) throw new Error('Gemini ne koi jawab nahi diya. Dobara try karo.');
+          history.push({role:'model',parts:parts});
+          trimHistory();
+          return reply;
+        }
+        history.push({role:'model',parts:parts});
+        var out = [];
+        for(var j=0;j<calls.length;j++){
+          var c = calls[j].functionCall;
+          out.push({functionResponse:{name:c.name, response:await runTool(c.name, c.args)}});
+        }
+        history.push({role:'user',parts:out});
+      }
+      return 'Kaam poora nahi ho paya, dobara bolo.';
+    }catch(e){
+      history.length = start;
+      throw e;
+    }
+  }
+
+  /* ---------- speech out ---------- */
+  function stopRec(){ if(rec){ var r = rec; rec = null; try{ r.onend = null; r.abort(); }catch(e){} } }
+  function speak(text){
+    return new Promise(function(resolve){
+      if(store.get('jv_speak','1') !== '1' || !window.speechSynthesis){ resolve(); return; }
+      stopRec();
+      speaking = true;
+      var u = new SpeechSynthesisUtterance(text.replace(/[*_`#>]/g,''));
+      u.lang = store.get('jv_lang','hi-IN');
+      var voices = speechSynthesis.getVoices(), pref = u.lang.slice(0,2);
+      for(var i=0;i<voices.length;i++){ if(voices[i].lang.indexOf(pref) === 0){ u.voice = voices[i]; break; } }
+      var done = function(){ speaking = false; resolve(); };
+      u.onstart = function(){ setState('speaking','Bol raha hoon...'); };
+      u.onend = done; u.onerror = done;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    });
+  }
+
+  /* ---------- main handler ---------- */
+  function idleOrHands(){
+    if(hands){ setState('idle','Hands-free on: "Arise" bolke command do'); if(!rec && !speaking) startRec(true); }
+    else setState('idle','Ready. Orb dabao aur bolo');
+  }
+  async function handle(text){
+    text = (text||'').trim();
+    if(!text || busy) return;
+    busy = true; stopRec();
+    add('me', text); setState('thinking','Soch raha hoon...');
+    try{
+      var reply = await ask(text);
+      add('ai', reply);
+      await speak(reply);
+    }catch(e){
+      add('sys err', e.message || String(e));
+    }
+    busy = false; idleOrHands();
+  }
+
+  /* ---------- speech in ---------- */
+  var WAKE = /(arise|a rise|arize|ariz|aries|uh rise|अराइज़|अराइज|अराइस|अराईज|एराइज|एराइज़)/i;
+  function startRec(continuous){
+    if(!SR){ add('sys','Is browser mein voice input nahi chalta. Chrome use karo, ya neeche type karo.'); hands = false; syncHands(); return; }
+    if(window.speechSynthesis && !continuous) speechSynthesis.cancel();
+    stopRec();
+    var r = new SR(); rec = r;
+    r.lang = store.get('jv_lang','hi-IN');
+    r.continuous = continuous; r.interimResults = !continuous;
+    var finalText = '';
+    r.onstart = function(){ setState('listening', continuous ? 'Hands-free: "Arise" bolo...' : 'Sun raha hoon...'); };
+    r.onresult = function(e){
+      var interim = '';
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        var res = e.results[i], t = res[0].transcript;
+        if(!res.isFinal){ interim += t; continue; }
+        if(!continuous){ finalText += t; continue; }
+        var m = t.match(WAKE);
+        if(m){
+          var cmd = t.slice(m.index + m[0].length).replace(/^[\s,.\-]+/,'');
+          if(cmd.length > 1) handle(cmd); else { awaitUntil = Date.now() + 8000; setState('listening','Haan bolo...'); }
+        } else if(Date.now() < awaitUntil){
+          awaitUntil = 0; handle(t);
+        }
+      }
+      if(!continuous) $('#status').textContent = (finalText + interim) || 'Sun raha hoon...';
+    };
+    r.onerror = function(e){
+      if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
+        add('sys err','Mic ki permission nahi mili. Browser mein mic allow karo.');
+        hands = false; syncHands();
+      } else if(e.error !== 'no-speech' && e.error !== 'aborted'){
+        add('sys err','Voice error: ' + e.error);
+      }
+    };
+    r.onend = function(){
+      if(rec !== r) return;
+      rec = null;
+      if(continuous){
+        if(hands && !speaking && !busy) setTimeout(function(){ if(hands && !rec && !speaking && !busy) startRec(true); }, 350);
+      } else {
+        if(document.body.dataset.state === 'listening') setState('idle','Ready. Orb dabao aur bolo');
+        if(finalText.trim()) handle(finalText);
+      }
+    };
+    try{ r.start(); }catch(e){ rec = null; setState('idle','Ready'); }
+  }
+
+  function syncHands(){
+    var b = $('#hands'); b.textContent = 'Hands-free: ' + (hands ? 'ON' : 'OFF'); b.setAttribute('aria-pressed', hands ? 'true' : 'false');
+  }
+  async function toggleHands(){
+    hands = !hands; syncHands();
+    if(hands){
+      try{ if(navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+      add('sys','Hands-free on. "Arise, YouTube pe gaane chalao" jaise bolo. Screen on rakho aur tab khula rakho.');
+      startRec(true);
+    } else {
+      stopRec(); try{ if(wakeLock) wakeLock.release(); }catch(e){} wakeLock = null;
+      setState('idle','Ready. Orb dabao aur bolo');
+    }
+  }
+
+  /* ---------- settings + wiring ---------- */
+  function loadSettings(){
+    $('#key').value = store.get('jv_key',''); $('#model').value = store.get('jv_model','gemini-2.5-flash');
+    $('#lang').value = store.get('jv_lang','hi-IN'); $('#speak').checked = store.get('jv_speak','1') === '1';
+  }
+  function saveSettings(){
+    store.set('jv_key', $('#key').value.trim()); store.set('jv_model', $('#model').value.trim() || 'gemini-2.5-flash');
+    store.set('jv_lang', $('#lang').value); store.set('jv_speak', $('#speak').checked ? '1' : '0');
+    $('#settings').hidden = true; idleOrHands();
+  }
+
+  $('#orb').addEventListener('click', function(){
+    if(hands) return;
+    if(document.body.dataset.state === 'listening' && rec){ try{ rec.stop(); }catch(e){} return; }
+    startRec(false);
+  });
+  $('#hands').addEventListener('click', toggleHands);
+  $('#form').addEventListener('submit', function(e){ e.preventDefault(); var v = $('#text').value; $('#text').value = ''; handle(v); });
+  $('#open-settings').addEventListener('click', function(){ loadSettings(); $('#settings').hidden = false; });
+  $('#save').addEventListener('click', saveSettings);
+  $('#clear').addEventListener('click', function(){ history = []; $('#log').textContent = ''; add('sys','Chat saaf ho gayi.'); $('#settings').hidden = true; });
+
+  ['YouTube pe Arijit Singh ke gaane chalao','Delhi ka mausam batao','10 minute ka timer lagao','Mummy ka number 9876543210 save karo','Mummy ko WhatsApp pe bolo main late aaunga','Yaad rakhna kal doodh lana hai','250 ka 18 percent kitna hua'].forEach(function(t){
+    var c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = t;
+    c.addEventListener('click', function(){ handle(t); }); $('#chips').appendChild(c);
+  });
+
+  if(window.speechSynthesis){ speechSynthesis.getVoices(); }
+  if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
+  loadSettings();
+  add('sys','Namaste, main Arise hoon. Bolo ya type karo, main kaam karunga: YouTube, WhatsApp, call, maps, timer, mausam, notes, hisaab.');
+  if(!store.get('jv_key','')) $('#settings').hidden = false;
+})();
+</script>
+</body>
+</html>
