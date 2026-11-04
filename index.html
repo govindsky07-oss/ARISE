@@ -13,7 +13,7 @@
 <link rel="icon" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-/* Layout: single-column HUD. Orb + hands-free toggle on top, transcript in the middle, input bar at the bottom. */
+/* Layout: single-column HUD. Orb + controls on top, optional video, transcript in the middle, input bar at the bottom. */
 :root{
   --bg:#050a12; --panel:#0b1422; --line:#17304a; --fg:#d8f3ff; --dim:#6f93ab;
   --cyan:#3ee0ff; --amber:#ffb23e; --danger:#ff7b7b; --live:var(--cyan);
@@ -21,6 +21,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{
   background:radial-gradient(120% 70% at 50% 0%,#0a1d33 0,var(--bg) 60%) var(--bg);
@@ -28,19 +29,21 @@ body{
   display:flex; flex-direction:column;
   padding-left:max(16px,env(safe-area-inset-left,0px));
   padding-right:max(16px,env(safe-area-inset-right,0px));
-  padding-block:max(12px,env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-bottom,0px));
+  padding-top:max(12px,env(safe-area-inset-top,0px));
+  padding-bottom:max(12px,env(safe-area-inset-bottom,0px));
 }
 body[data-state=listening]{--live:var(--amber)}
 header{display:flex;justify-content:space-between;align-items:center;gap:12px}
 h1{margin:0;font-size:22px;letter-spacing:.35em;font-weight:700;color:var(--cyan)}
 .tiny{font:12px var(--mono);color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
-button,input,select{font:inherit;color:inherit}
+button,input,select,textarea{font:inherit;color:inherit}
 .ghost{background:none;border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer;font:13px var(--mono);letter-spacing:.06em;text-transform:uppercase}
 .ghost:hover,.ghost:focus-visible{border-color:var(--cyan);color:var(--cyan);outline:none}
 .ghost[aria-pressed=true]{border-color:var(--amber);color:var(--amber);box-shadow:0 0 14px rgba(255,178,62,.35)}
 
-.stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px 0 6px}
-.orb{position:relative;width:min(42vw,170px);aspect-ratio:1;border:0;background:none;cursor:pointer;padding:0;border-radius:50%}
+.stage{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 0 4px}
+.orb{position:relative;width:min(40vw,160px);aspect-ratio:1;border:0;background:none;cursor:pointer;padding:0;border-radius:50%;transition:width .3s}
+body.has-video .orb{width:96px}
 .orb:focus-visible{outline:2px solid var(--live);outline-offset:6px}
 .orb i{position:absolute;border-radius:50%;display:block}
 .orb i:nth-child(1){inset:0;border:2px dashed var(--live);opacity:.55;animation:spin 24s linear infinite}
@@ -52,9 +55,18 @@ body[data-state=speaking] .orb i:nth-child(3){animation-duration:.6s}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes breathe{50%{transform:scale(1.14);opacity:.8}}
 #status{min-height:1.4em;text-align:center;max-width:100%;overflow-wrap:anywhere}
-.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:4px 0}
-.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px;cursor:pointer}
+.lvl{width:min(260px,60vw);height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.lvl i{display:block;height:100%;width:0;background:var(--live);transition:width .08s}
+#heard{font:12px var(--mono);color:var(--dim);min-height:1.3em;max-width:100%;overflow-wrap:anywhere;text-align:center}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 2px;max-width:100%;-webkit-overflow-scrolling:touch}
+.chip{flex:0 0 auto;white-space:nowrap;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:14px;cursor:pointer}
 .chip:hover,.chip:focus-visible{border-color:var(--cyan);outline:none}
+
+.playerbox{width:100%;max-width:560px;margin:6px auto 0;display:flex;flex-direction:column;gap:6px}
+.player{position:relative;width:100%;aspect-ratio:16/9;background:#000;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.vbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#vtitle{flex:1 1 160px;min-width:0;font-size:14px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 #log{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:8px 2px}
 .msg{max-width:88%;padding:9px 13px;border:1px solid var(--line);background:var(--panel);border-radius:10px;overflow-wrap:anywhere;white-space:pre-wrap}
@@ -64,6 +76,7 @@ body[data-state=speaking] .orb i:nth-child(3){animation-duration:.6s}
 .msg.err{color:var(--danger)}
 .msg.act{align-self:flex-start;font:13px var(--mono);color:var(--cyan);background:none;border:1px dashed var(--line)}
 .msg a{color:var(--cyan)}
+.copy{display:block;margin-top:8px}
 
 form{display:flex;gap:8px;padding-top:8px}
 form input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 13px}
@@ -71,8 +84,7 @@ form input:focus-visible{outline:none;border-color:var(--cyan)}
 .send{background:var(--cyan);color:#021018;border:0;border-radius:8px;padding:0 18px;font-weight:700;letter-spacing:.08em;cursor:pointer}
 
 #settings{position:fixed;inset:0;background:rgba(2,6,12,.86);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}
-#settings[hidden]{display:none}
-.card{width:min(440px,100%);max-height:100%;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.card{width:min(460px,100%);max-height:100%;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px}
 .card h2{margin:0;font-size:20px;letter-spacing:.2em;color:var(--cyan)}
 label{display:flex;flex-direction:column;gap:5px}
 label.row{flex-direction:row;align-items:center;gap:10px}
@@ -91,8 +103,22 @@ label.row{flex-direction:row;align-items:center;gap:10px}
 <section class="stage">
   <button class="orb" id="orb" type="button" aria-label="Ek baar bolne ke liye dabao"><i></i><i></i><i></i></button>
   <div id="status" class="tiny">Orb dabao aur bolo</div>
+  <div class="lvl" aria-hidden="true"><i id="lvlbar"></i></div>
+  <div id="heard"></div>
   <button class="ghost" id="hands" type="button" aria-pressed="false">Hands-free: OFF</button>
   <div class="chips" id="chips"></div>
+</section>
+
+<section class="playerbox" id="playerbox" hidden>
+  <div class="player" id="ytwrap"></div>
+  <div class="vbar">
+    <span id="vtitle"></span>
+    <button class="ghost" id="v-play" type="button">Play/Pause</button>
+    <button class="ghost" id="v-back" type="button">-10s</button>
+    <button class="ghost" id="v-fwd" type="button">+10s</button>
+    <button class="ghost" id="v-sound" type="button">Sound ON</button>
+    <button class="ghost" id="v-close" type="button">Band</button>
+  </div>
 </section>
 
 <main id="log" aria-live="polite"></main>
@@ -111,17 +137,24 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     </label>
     <label>Model
       <input id="model" type="text" value="gemini-flash-latest">
+      <span class="tiny">Busy hone par Arise apne aap dusre model try karta hai.</span>
     </label>
-    <label>Bolne ki bhasha
+    <label>YouTube API key (optional)
+      <input id="ytkey" type="password" placeholder="AIza..." autocomplete="off">
+      <span class="tiny">Channel ka asli sabse zyada views wala video chalane ke liye. Bina iske Arise Gemini search se andaaza lagata hai.</span>
+    </label>
+    <label>Bolne ki bhasha (Chrome/Android)
       <select id="lang">
         <option value="hi-IN">Hindi / Hinglish (hi-IN)</option>
         <option value="en-IN">English India (en-IN)</option>
         <option value="en-US">English US (en-US)</option>
       </select>
     </label>
+    <label class="row"><input id="rec" type="checkbox"> Gemini se awaaz samjho (iPad/iPhone ke liye zaroori)</label>
     <label class="row"><input id="speak" type="checkbox" checked> Jawab bolke sunao</label>
     <div class="actions">
       <button class="ghost" id="clear" type="button">Chat saaf karo</button>
+      <button class="ghost" id="clear-mem" type="button">Yaaddasht bhulo</button>
       <button class="ghost" id="save" type="button">Save</button>
     </div>
   </div>
@@ -134,38 +167,68 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     get:function(k,d){try{var v=localStorage.getItem(k);return v===null?d:v}catch(e){return d}},
     set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}
   };
+  function jget(k,d){ try{ var v = JSON.parse(store.get(k,'')); return v==null?d:v; }catch(e){ return d; } }
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(store.get('jv_model','') === 'gemini-2.5-flash') store.set('jv_model','gemini-flash-latest');
   var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/.test(navigator.platform));
-  function useRecordMode(){ return !SR || IOS || store.get('jv_record','') === '1'; }
-  var history = [], rec = null, busy = false, speaking = false, hands = false, awaitUntil = 0, wakeLock = null;
+  var DEFAULT_MODEL = 'gemini-flash-latest';
+  if(store.get('jv_model','') === 'gemini-2.5-flash') store.set('jv_model', DEFAULT_MODEL);
+  function recMode(){
+    var f = store.get('jv_record','');
+    if(f === '1') return true;
+    if(f === '0') return !SR;
+    return !SR || IOS;
+  }
 
-  var SYSTEM = "Tum Arise ho, ek smart aur friendly voice assistant jo user ke commands follow karta hai. " +
-    "Jab user koi kaam bole (website kholna, search, YouTube, map, WhatsApp, call, email, timer, mausam, note, hisaab), tools use karo, sirf baat mat karo. " +
-    "User ki bhasha mein jawab do (Hinglish ho toh Hinglish). Kaam hone ke baad ek chhota confirmation do, 1 se 2 vaakya, kyunki jawab bolke sunaya jayega. " +
-    "Markdown, bullet points aur emoji mat use karo. Agar kisi kaam ke liye zaroori jaankari nahi hai (jaise phone number), user se poochho.";
+  var history = [], busy = false, speaking = false, quietUntil = 0, hands = false;
+  var awaitUntil = 0, wakeLock = null, rec = null, L = null, calls = [];
+  var videoPausedByUs = false, videoTouched = false, speechUnlocked = false;
+  var WAKE = /\b(arise|a rise|arize|ariz|arice|aries|arais|erise)\b|अराइज़?|अराईज़?|अराइस|एराइज़?|अरेज़?/i;
 
-  var TOOLS = [{functionDeclarations:[
-    {name:'open_website',description:'Koi website kholo.',parameters:{type:'OBJECT',properties:{url:{type:'STRING',description:'Poora URL ya domain, jaise youtube.com'}},required:['url']}},
-    {name:'web_search',description:'Google pe search karo.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
-    {name:'youtube_play',description:'YouTube pe gana ya video dhoondo.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
-    {name:'open_maps',description:'Google Maps pe jagah ya route kholo.',parameters:{type:'OBJECT',properties:{destination:{type:'STRING'}},required:['destination']}},
-    {name:'whatsapp_message',description:'WhatsApp message taiyaar karke kholo. to = saved contact ka naam ya phone number.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'},message:{type:'STRING'}},required:['message']}},
-    {name:'phone_call',description:'Call lagao. to = saved contact ka naam ya phone number.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'}},required:['to']}},
-    {name:'send_email',description:'Gmail mein email likhna shuru karo.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'},subject:{type:'STRING'},body:{type:'STRING'}},required:['body']}},
-    {name:'save_contact',description:'Naam aur phone number save karo taaki baad mein "Mummy ko call karo" chal sake.',parameters:{type:'OBJECT',properties:{name:{type:'STRING'},phone:{type:'STRING'}},required:['name','phone']}},
-    {name:'set_timer',description:'Timer ya alarm lagao.',parameters:{type:'OBJECT',properties:{seconds:{type:'NUMBER'},label:{type:'STRING'}},required:['seconds']}},
-    {name:'save_note',description:'Yaaddasht save karo.',parameters:{type:'OBJECT',properties:{text:{type:'STRING'}},required:['text']}},
-    {name:'read_notes',description:'Saved yaaddashten sunao.',parameters:{type:'OBJECT',properties:{}}},
-    {name:'get_weather',description:'Kisi sheher ka abhi ka mausam batao.',parameters:{type:'OBJECT',properties:{city:{type:'STRING'}},required:['city']}},
-    {name:'calculate',description:'Hisaab karo. Sirf numbers aur + - * / % ( ) ^ allowed.',parameters:{type:'OBJECT',properties:{expression:{type:'STRING'}},required:['expression']}},
-    {name:'current_time',description:'Abhi ka time aur date batao.',parameters:{type:'OBJECT',properties:{}}}
-  ]}];
+  /* ---------- prompt ---------- */
+  function nowString(){
+    return new Date().toLocaleString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'numeric',minute:'2-digit'});
+  }
+  function systemText(){
+    var prof = jget('jv_profile', []);
+    return 'Tum "Arise" ho: user ka personal voice assistant (Jarvis jaisa), smart, tez aur friendly. ' +
+      'User jis bhasha mein bole usi mein jawab do (Hinglish ho toh Roman Hinglish).\n' +
+      'Niyam:\n' +
+      '- Jab user koi kaam bole (video chalana, search, maps, WhatsApp, call, email, timer, notes, mausam, hisaab) toh tools use karo. Bina tool chalaye kabhi mat kehna ki kaam ho gaya.\n' +
+      '- Aaj ki khabar, score, price ya koi bhi latest jaankari ke liye web_lookup use karo. Andaaza mat lagao.\n' +
+      '- "Kisi channel ka viral ya sabse zyada views wala video chalao" ke liye play_youtube_video use karo (channel set karo, sort=viral). "Naya video" ke liye sort=latest. Gaana ya topic ke liye query set karo.\n' +
+      '- Video ka script, caption ya idea maangne par write_script use karo. Wo poora script screen par likh deta hai.\n' +
+      '- User apne baare mein kuch bataye (naam, pasand, kaam) toh remember_about_me use karo.\n' +
+      '- Jawab bolke sunaya jayega. Pehle 1 se 2 chhote vaakya mein seedha jawab ya confirmation do. Lambi cheez maangi gayi ho toh detail mein likh sakte ho, par sirf shuruaat ke vaakya sunaye jayenge.\n' +
+      '- Markdown (*, #, backticks) aur emoji mat use karo.\n' +
+      '- Zaroori jaankari na ho (jaise phone number) toh ek chhota sawal poochho.\n' +
+      'Abhi ka samay (India): ' + nowString() + '.' +
+      (prof.length ? '\nUser ke baare mein jo pata hai: ' + prof.join('; ') + '.' : '');
+  }
 
   /* ---------- UI helpers ---------- */
   function setState(s, text){ document.body.dataset.state = s; if(text) $('#status').textContent = text; }
+  function setHeard(t){ $('#heard').textContent = t ? ('Suna: ' + t) : ''; }
+  function statusIdle(){
+    if(hands) setState('listening','Hands-free on: "Arise" bolo...');
+    else setState('idle','Ready. Orb dabao aur bolo');
+  }
+  function copyText(text, btn){
+    function done(){ btn.textContent = 'Copy ho gaya'; setTimeout(function(){ btn.textContent = 'Copy'; }, 1500); }
+    function fallback(){
+      var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); done(); }catch(e){}
+      document.body.removeChild(ta);
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fallback); } else fallback();
+  }
   function add(kind, text){
     var d = document.createElement('div'); d.className = 'msg ' + kind; d.textContent = text;
+    if(kind === 'ai' && text.length > 350){
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'ghost copy'; b.textContent = 'Copy';
+      b.addEventListener('click', function(){ copyText(text, b); });
+      d.appendChild(b);
+    }
     $('#log').appendChild(d); $('#log').scrollTop = $('#log').scrollHeight; return d;
   }
   function openLink(label, url){
@@ -175,21 +238,188 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     try{ window.open(url, '_blank', 'noopener'); }catch(e){}
     $('#log').scrollTop = $('#log').scrollHeight;
   }
-  function beep(){
+  function tone(count){
     try{
-      var C = window.AudioContext || window.webkitAudioContext, c = new C(), t = 0;
-      for(var i=0;i<4;i++){
+      var own = !L, C = window.AudioContext || window.webkitAudioContext, c = L ? L.ctx : new C(), t = 0;
+      for(var i=0;i<count;i++){
         var o = c.createOscillator(), g = c.createGain();
-        o.frequency.value = 880; o.connect(g); g.connect(c.destination);
-        g.gain.setValueAtTime(0.25, c.currentTime + t); g.gain.setValueAtTime(0, c.currentTime + t + 0.2);
-        o.start(c.currentTime + t); o.stop(c.currentTime + t + 0.25); t += 0.4;
+        o.frequency.value = count > 1 ? 880 : 1180; o.connect(g); g.connect(c.destination);
+        var len = count > 1 ? 0.2 : 0.12;
+        g.gain.setValueAtTime(0.22, c.currentTime + t); g.gain.setValueAtTime(0, c.currentTime + t + len);
+        o.start(c.currentTime + t); o.stop(c.currentTime + t + len + 0.03); t += 0.4;
       }
+      if(own) setTimeout(function(){ try{ c.close(); }catch(e){} }, t * 1000 + 300);
     }catch(e){}
+  }
+  function beep(){ tone(4); }
+  function ding(){ tone(1); }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  /* ---------- Gemini (with retry + model fallback) ---------- */
+  function modelList(first){
+    var m = first || store.get('jv_model', DEFAULT_MODEL) || DEFAULT_MODEL;
+    var l = [m, 'gemini-flash-latest', 'gemini-flash-lite-latest'];
+    return l.filter(function(x,i){ return x && l.indexOf(x) === i; });
+  }
+  async function gemini(body, models){
+    var key = store.get('jv_key','');
+    if(!key){ $('#settings').hidden = false; throw new Error('Pehle Settings mein Gemini API key daalo.'); }
+    var list = models || modelList(), lastErr = null;
+    for(var round=0; round<2; round++){
+      for(var i=0;i<list.length;i++){
+        var res, data;
+        try{
+          res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(list[i]) + ':generateContent', {
+            method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':key}, body:JSON.stringify(body)
+          });
+          data = await res.json().catch(function(){return {}});
+        }catch(e){ lastErr = new Error('Internet ki dikkat. Connection check karke dobara bolo.'); continue; }
+        if(res.ok) return data;
+        var msg = (data.error && data.error.message) || ('Error ' + res.status);
+        lastErr = new Error(msg); lastErr.status = res.status;
+        if(res.status === 400 || res.status === 401 || res.status === 403) throw lastErr;
+      }
+      await sleep(1500);
+    }
+    throw lastErr;
+  }
+  function friendly(e){
+    var m = (e && e.message) || String(e), s = e && e.status;
+    if(/api key/i.test(m)) return 'API key galat hai. Settings mein sahi key daalo.';
+    if(s === 429 || /quota|rate limit|resource exhausted/i.test(m)) return 'Gemini ki free limit abhi poori hai. 1 minute ruk ke dobara try karo.';
+    if(s === 503 || /high demand|overloaded|unavailable/i.test(m)) return 'Gemini abhi busy hai. Thodi der baad dobara bolo.';
+    return m;
+  }
+  function textOf(data){
+    var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+    return parts.map(function(p){ return p.text || ''; }).join('').trim();
+  }
+
+  /* ---------- YouTube in the page ---------- */
+  var ytPlayer = null, ytIsReady = false, pendingVid = null, ytApiState = 0, ytQueue = null;
+  function ensureYT(cb){
+    if(window.YT && YT.Player){ cb(); return; }
+    ytQueue = cb;
+    if(ytApiState === 0){
+      ytApiState = 1;
+      window.onYouTubeIframeAPIReady = function(){ ytApiState = 2; if(ytQueue){ var f = ytQueue; ytQueue = null; f(); } };
+      var s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = function(){ ytApiState = 0; add('sys err','YouTube player load nahi hua. Internet check karo.'); };
+      document.head.appendChild(s);
+    }
+  }
+  function showVideo(id, title){
+    $('#playerbox').hidden = false; document.body.classList.add('has-video');
+    $('#vtitle').textContent = title || '';
+    ensureYT(function(){
+      if(ytPlayer){ if(ytIsReady) ytPlayer.loadVideoById(id); else pendingVid = id; return; }
+      $('#ytwrap').innerHTML = '<div id="ytbox"></div>';
+      ytIsReady = false;
+      ytPlayer = new YT.Player('ytbox', {
+        videoId:id, width:'100%', height:'100%',
+        playerVars:{autoplay:1, mute:1, playsinline:1, rel:0, origin:location.origin},
+        events:{
+          onReady:function(e){
+            ytIsReady = true;
+            try{ if(pendingVid){ e.target.loadVideoById(pendingVid); pendingVid = null; } else e.target.playVideo(); }catch(x){}
+          },
+          onStateChange:function(e){
+            if(e.data === 1){ try{ e.target.unMute(); }catch(x){} }
+          },
+          onError:function(e){
+            add('sys err','Ye video app ke andar nahi chal sakta (code ' + e.data + ').');
+            openLink('YouTube:', 'https://www.youtube.com/watch?v=' + (id || ''));
+          }
+        }
+      });
+    });
+  }
+  function closeVideo(){
+    try{ if(ytPlayer && ytPlayer.destroy) ytPlayer.destroy(); }catch(e){}
+    ytPlayer = null; ytIsReady = false; pendingVid = null;
+    $('#ytwrap').innerHTML = ''; $('#playerbox').hidden = true; document.body.classList.remove('has-video');
+  }
+  function vc(fn){ try{ if(ytPlayer && ytIsReady) fn(ytPlayer); }catch(e){} }
+  function duck(){
+    videoTouched = false;
+    try{ if(ytPlayer && ytIsReady && ytPlayer.getPlayerState() === 1){ ytPlayer.pauseVideo(); videoPausedByUs = true; } }catch(e){}
+  }
+  function unduck(){
+    if(videoPausedByUs && !videoTouched){ vc(function(p){ p.playVideo(); }); }
+    videoPausedByUs = false;
+  }
+
+  async function ytGet(path, params, key){
+    params.key = key;
+    var r = await fetch('https://www.googleapis.com/youtube/v3/' + path + '?' + new URLSearchParams(params));
+    var j = await r.json().catch(function(){return {}});
+    if(!r.ok) throw new Error((j.error && j.error.message) || ('YouTube API ' + r.status));
+    return j;
+  }
+  async function viaYtApi(a, sort, key){
+    var order = sort === 'viral' ? 'viewCount' : (sort === 'latest' ? 'date' : 'relevance');
+    var p = {part:'snippet', type:'video', maxResults:'5', order:order, videoEmbeddable:'true'};
+    if(a.channel){
+      var c = await ytGet('search', {part:'snippet', type:'channel', q:a.channel, maxResults:'1'}, key);
+      var it = c.items && c.items[0];
+      if(!it) throw new Error('Channel nahi mila');
+      p.channelId = (it.snippet && it.snippet.channelId) || (it.id && it.id.channelId);
+      if(a.query) p.q = a.query;
+    } else { p.q = a.query || ''; }
+    var v = await ytGet('search', p, key);
+    var vi = v.items && v.items[0];
+    if(!vi) throw new Error('Video nahi mila');
+    return {id:vi.id.videoId, title:vi.snippet.title, channel:vi.snippet.channelTitle, how:'YouTube API'};
+  }
+  async function verifyVideo(id){
+    try{
+      var r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id));
+      if(r.status === 400 || r.status === 401 || r.status === 404) return false;
+      if(r.ok){ var j = await r.json(); return j.title || true; }
+      return true;
+    }catch(e){ return true; }
+  }
+  async function viaGemini(a, sort){
+    var what = sort === 'viral' ? 'sabse zyada views wala (sabse viral)' : (sort === 'latest' ? 'sabse naya (latest)' : 'sabse relevant');
+    var subject = (a.channel ? '"' + a.channel + '" YouTube channel ka ' : '') + (a.query ? '"' + a.query + '" topic ka ' : '') + what + ' video';
+    var data = await gemini({
+      contents:[{role:'user',parts:[{text:'Google search se dhoondo: ' + subject + '. Sirf ek line mein is format mein jawab do: VIDEOID | video ka title | channel ka naam. VIDEOID YouTube watch?v= ke baad wala exactly 11 akshar ka id hona chahiye. Pakka na mile toh sirf likho: NONE'}]}],
+      tools:[{google_search:{}}]
+    });
+    var t = textOf(data);
+    if(!t || /^none/i.test(t)) return null;
+    var m = t.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/) || t.match(/^\s*([A-Za-z0-9_-]{11})\s*\|/m);
+    if(!m) return null;
+    var id = m[1], ok = await verifyVideo(id);
+    if(ok === false) return null;
+    var bits = t.split('|');
+    return {id:id, title:(typeof ok === 'string' ? ok : (bits[1] || 'Video').trim()), channel:(bits[2] || a.channel || '').trim(), how:'Gemini search (sabse viral hone ki pakki guarantee nahi)'};
   }
 
   /* ---------- tools ---------- */
+  var TOOLS = [{functionDeclarations:[
+    {name:'play_youtube_video',description:'YouTube video app ke andar chalao. Channel ka sabse viral (sabse zyada views) ya latest video, ya kisi topic/gaane ka video.',parameters:{type:'OBJECT',properties:{channel:{type:'STRING',description:'Channel ka naam, agar user ne bola ho'},query:{type:'STRING',description:'Topic ya gaane ka naam, agar ho'},sort:{type:'STRING',description:'viral, latest ya relevant'}}}},
+    {name:'video_control',description:'Chal rahe video ko control karo.',parameters:{type:'OBJECT',properties:{action:{type:'STRING',description:'pause, play, forward, back, mute, unmute ya stop'},seconds:{type:'NUMBER',description:'forward/back ke liye seconds, default 10'}},required:['action']}},
+    {name:'web_lookup',description:'Internet se latest jaankari lao: khabar, score, price, facts. Jawab Hinglish mein chhota milta hai.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
+    {name:'write_script',description:'Video, Shorts, Reel ya podcast ka poora script likho aur screen par dikhao.',parameters:{type:'OBJECT',properties:{topic:{type:'STRING'},platform:{type:'STRING',description:'YouTube, Shorts, Reel, etc.'},length:{type:'STRING',description:'jaise 60 second ya 5 minute'},language:{type:'STRING',description:'default Hinglish'}},required:['topic']}},
+    {name:'remember_about_me',description:'User ke baare mein ek zaroori baat yaad rakho (naam, pasand, kaam).',parameters:{type:'OBJECT',properties:{fact:{type:'STRING'}},required:['fact']}},
+    {name:'open_website',description:'Koi website kholo.',parameters:{type:'OBJECT',properties:{url:{type:'STRING',description:'Poora URL ya domain'}},required:['url']}},
+    {name:'web_search',description:'Google search ka page kholo (jab user bole google pe search karo).',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
+    {name:'open_maps',description:'Google Maps pe jagah ya route kholo.',parameters:{type:'OBJECT',properties:{destination:{type:'STRING'}},required:['destination']}},
+    {name:'whatsapp_message',description:'WhatsApp message taiyaar karke kholo. to = saved contact ka naam ya phone number.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'},message:{type:'STRING'}},required:['message']}},
+    {name:'phone_call',description:'Call lagao. to = saved contact ka naam ya phone number.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'}},required:['to']}},
+    {name:'send_email',description:'Gmail mein email likhna shuru karo.',parameters:{type:'OBJECT',properties:{to:{type:'STRING'},subject:{type:'STRING'},body:{type:'STRING'}},required:['body']}},
+    {name:'save_contact',description:'Naam aur phone number save karo.',parameters:{type:'OBJECT',properties:{name:{type:'STRING'},phone:{type:'STRING'}},required:['name','phone']}},
+    {name:'set_timer',description:'Timer ya alarm lagao.',parameters:{type:'OBJECT',properties:{seconds:{type:'NUMBER'},label:{type:'STRING'}},required:['seconds']}},
+    {name:'save_note',description:'Yaaddasht save karo.',parameters:{type:'OBJECT',properties:{text:{type:'STRING'}},required:['text']}},
+    {name:'read_notes',description:'Saved yaaddashten sunao.'},
+    {name:'get_weather',description:'Kisi sheher ka abhi ka mausam batao.',parameters:{type:'OBJECT',properties:{city:{type:'STRING'}},required:['city']}},
+    {name:'calculate',description:'Hisaab karo. Sirf numbers aur + - * / % ( ) ^.',parameters:{type:'OBJECT',properties:{expression:{type:'STRING'}},required:['expression']}},
+    {name:'current_time',description:'Abhi ka time aur date batao.'}
+  ]}];
+
   function phoneFrom(to){
-    var contacts = {}; try{ contacts = JSON.parse(store.get('jv_contacts','{}')); }catch(e){}
+    var contacts = jget('jv_contacts', {});
     var key = (to||'').toLowerCase().trim();
     if(contacts[key]) return contacts[key];
     var digits = (to||'').replace(/[^\d+]/g,'');
@@ -200,30 +430,84 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     return null;
   }
   var tools = {
+    play_youtube_video:async function(a){
+      setState('thinking','Video dhoondh raha hoon...');
+      var sort = a.sort || (a.channel ? 'viral' : 'relevant'), r = null, ytKey = store.get('jv_ytkey','');
+      if(ytKey){ try{ r = await viaYtApi(a, sort, ytKey); }catch(e){ add('act','YouTube API: ' + (e.message || e)); } }
+      if(!r){ try{ r = await viaGemini(a, sort); }catch(e){} }
+      if(r){
+        videoTouched = true;
+        showVideo(r.id, r.title + (r.channel ? ' | ' + r.channel : ''));
+        add('act','Video: ' + r.title);
+        return {status:'video app ke andar chal raha hai. Agar awaaz na aaye toh video par ek baar tap karo.', title:r.title, channel:r.channel, source:r.how};
+      }
+      var q = ((a.channel||'') + ' ' + (a.query||'')).trim();
+      var sp = sort === 'latest' ? 'CAISAhAB' : (sort === 'viral' ? 'CAMSAhAB' : '');
+      openLink('YouTube search:', 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q) + (sp ? '&sp=' + sp : ''));
+      return {status:'App ke andar video nahi mil paya. YouTube ka search page link diya hai, user ko link par tap karna hoga.'};
+    },
+    video_control:function(a){
+      if(!ytPlayer || !ytIsReady) return {error:'Abhi koi video nahi chal raha.'};
+      videoTouched = true;
+      var act = a.action, sec = a.seconds || 10;
+      try{
+        if(act === 'pause') ytPlayer.pauseVideo();
+        else if(act === 'play') ytPlayer.playVideo();
+        else if(act === 'forward') ytPlayer.seekTo(ytPlayer.getCurrentTime() + sec, true);
+        else if(act === 'back') ytPlayer.seekTo(Math.max(0, ytPlayer.getCurrentTime() - sec), true);
+        else if(act === 'mute') ytPlayer.mute();
+        else if(act === 'unmute') ytPlayer.unMute();
+        else if(act === 'stop') closeVideo();
+        else return {error:'Ye action nahi hai.'};
+      }catch(e){ return {error:String(e.message || e)}; }
+      return {status:'ho gaya', action:act};
+    },
+    web_lookup:async function(a){
+      var data = await gemini({
+        contents:[{role:'user',parts:[{text:a.query + '\n\nAaj ki taareekh: ' + nowString() + '. Latest jaankari ke saath Hinglish mein saaf jawab do (zyada se zyada 6 vaakya).'}]}],
+        tools:[{google_search:{}}]
+      });
+      return {answer:textOf(data) || 'Kuch nahi mila.'};
+    },
+    write_script:async function(a){
+      setState('thinking','Script likh raha hoon...');
+      var p = 'Ek ' + (a.platform || 'YouTube') + ' video ka script likho.\nTopic: ' + a.topic + '\nBhasha: ' + (a.language || 'Hinglish (Roman script)') + '\nLambai: ' + (a.length || '60 second') +
+        '\nFormat: pehle HOOK (pehle 3 second), phir BODY (scene by scene: bolne wali line aur screen par kya dikhega), aakhir mein CTA. Plain text likho, markdown symbols (*, #) mat use karo.';
+      var data = await gemini({contents:[{role:'user',parts:[{text:p}]}]});
+      var t = textOf(data);
+      if(!t) return {error:'Script nahi ban paya, dobara try karo.'};
+      add('ai', t);
+      return {status:'Poora script screen par likh diya (Copy button neeche hai). User ko bolo ki script screen par hai.', words:t.split(/\s+/).length};
+    },
+    remember_about_me:function(a){
+      var p = jget('jv_profile', []);
+      p.push(String(a.fact || '').slice(0, 200));
+      store.set('jv_profile', JSON.stringify(p.slice(-30)));
+      return {status:'yaad rakh liya'};
+    },
     open_website:function(a){
       var u = /^https?:\/\//i.test(a.url) ? a.url : 'https://' + a.url;
-      openLink('Website:', u); return {status:'opened', url:u};
+      openLink('Website:', u); return {status:'link diya', url:u};
     },
-    web_search:function(a){ openLink('Google:', 'https://www.google.com/search?q=' + encodeURIComponent(a.query)); return {status:'opened'}; },
-    youtube_play:function(a){ openLink('YouTube:', 'https://www.youtube.com/results?search_query=' + encodeURIComponent(a.query)); return {status:'opened'}; },
-    open_maps:function(a){ openLink('Maps:', 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(a.destination)); return {status:'opened'}; },
+    web_search:function(a){ openLink('Google:', 'https://www.google.com/search?q=' + encodeURIComponent(a.query)); return {status:'link diya'}; },
+    open_maps:function(a){ openLink('Maps:', 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(a.destination)); return {status:'link diya'}; },
     whatsapp_message:function(a){
       var p = a.to ? phoneFrom(a.to) : '';
       if(a.to && !p) return {error:'Is naam ka number save nahi hai. User se number poochho, phir save_contact use karo.'};
       openLink('WhatsApp:', 'https://wa.me/' + (p||'') + '?text=' + encodeURIComponent(a.message));
-      return {status:'WhatsApp khul gaya, user ko bas send dabana hai.'};
+      return {status:'WhatsApp ka link diya, user ko bas send dabana hai.'};
     },
     phone_call:function(a){
       var p = phoneFrom(a.to);
       if(!p) return {error:'Is naam ka number save nahi hai. User se number poochho, phir save_contact use karo.'};
-      openLink('Call:', 'tel:+' + p); return {status:'dialer khul gaya'};
+      openLink('Call:', 'tel:+' + p); return {status:'dialer ka link diya, user ko Call dabana hai.'};
     },
     send_email:function(a){
-      var u = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(a.to||'') + '&su=' + encodeURIComponent(a.subject||'') + '&body=' + encodeURIComponent(a.body);
-      openLink('Gmail:', u); return {status:'email draft khul gaya'};
+      openLink('Gmail:', 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(a.to||'') + '&su=' + encodeURIComponent(a.subject||'') + '&body=' + encodeURIComponent(a.body));
+      return {status:'email draft ka link diya'};
     },
     save_contact:function(a){
-      var contacts = {}; try{ contacts = JSON.parse(store.get('jv_contacts','{}')); }catch(e){}
+      var contacts = jget('jv_contacts', {});
       var d = (a.phone||'').replace(/[^\d+]/g,''), digits = d.replace(/\D/g,'');
       contacts[(a.name||'').toLowerCase().trim()] = d[0] === '+' ? digits : (digits.length === 10 ? '91' + digits : digits);
       store.set('jv_contacts', JSON.stringify(contacts));
@@ -231,23 +515,17 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     },
     set_timer:function(a){
       var s = Math.max(1, Math.round(a.seconds)), label = a.label || 'Timer';
-      setTimeout(function(){
-        beep(); add('ai', label + ' khatam ho gaya.');
-        if(!speaking) speak(label + ' khatam ho gaya.');
-      }, s * 1000);
-      add('act', 'Timer set: ' + label + ' (' + (s >= 60 ? Math.round(s/60) + ' min' : s + ' sec') + ')');
+      setTimeout(function(){ beep(); add('ai', label + ' khatam ho gaya.'); if(!speaking && !busy) speak(label + ' khatam ho gaya.'); }, s * 1000);
+      add('act','Timer set: ' + label + ' (' + (s >= 60 ? Math.round(s/60) + ' min' : s + ' sec') + ')');
       return {status:'timer set', seconds:s};
     },
     save_note:function(a){
-      var n = []; try{ n = JSON.parse(store.get('jv_notes','[]')); }catch(e){}
+      var n = jget('jv_notes', []);
       n.push({text:a.text, at:new Date().toLocaleString('en-IN')});
       store.set('jv_notes', JSON.stringify(n));
-      add('act', 'Note saved: ' + a.text); return {status:'saved', total:n.length};
+      add('act','Note saved: ' + a.text); return {status:'saved', total:n.length};
     },
-    read_notes:function(){
-      var n = []; try{ n = JSON.parse(store.get('jv_notes','[]')); }catch(e){}
-      return {notes:n.slice(-10)};
-    },
+    read_notes:function(){ return {notes:jget('jv_notes', []).slice(-10)}; },
     get_weather:async function(a){
       var g = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&name=' + encodeURIComponent(a.city))).json();
       if(!g.results || !g.results.length) return {error:'Sheher nahi mila'};
@@ -271,123 +549,132 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     try{ return await tools[name](args || {}); }catch(e){ return {error:String(e.message || e)}; }
   }
 
-  /* ---------- Gemini ---------- */
-  function trimHistory(){
-    while(history.length > 30) history.shift();
-    while(history.length && !(history[0].role === 'user' && history[0].parts[0] && history[0].parts[0].text)) history.shift();
-  }
-  async function callGemini(){
-    var key = store.get('jv_key',''), model = store.get('jv_model','gemini-flash-latest');
-    var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-goog-api-key':key},
-      body:JSON.stringify({systemInstruction:{parts:[{text:SYSTEM}]}, contents:history, tools:TOOLS})
-    });
-    var data = await res.json().catch(function(){return {}});
-    if(!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
-    return data;
-  }
   async function ask(text){
-    if(!store.get('jv_key','')){ $('#settings').hidden = false; throw new Error('Pehle Settings mein Gemini API key daalo.'); }
-    var start = history.length;
-    history.push({role:'user',parts:[{text:text}]});
-    try{
-      for(var i=0;i<6;i++){
-        var data = await callGemini();
-        var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-        var calls = parts.filter(function(p){return p.functionCall});
-        if(!calls.length){
-          var reply = parts.map(function(p){return p.text||''}).join('').trim();
-          if(!reply) throw new Error('Gemini ne koi jawab nahi diya. Dobara try karo.');
-          history.push({role:'model',parts:parts});
-          trimHistory();
-          return reply;
-        }
-        history.push({role:'model',parts:parts});
-        var out = [];
-        for(var j=0;j<calls.length;j++){
-          var c = calls[j].functionCall;
-          out.push({functionResponse:{name:c.name, response:await runTool(c.name, c.args)}});
-        }
-        history.push({role:'user',parts:out});
+    var turn = history.slice(-16).concat([{role:'user',parts:[{text:text}]}]);
+    for(var i=0;i<6;i++){
+      var data = await gemini({systemInstruction:{parts:[{text:systemText()}]}, contents:turn, tools:TOOLS});
+      var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+      var fcalls = parts.filter(function(p){ return p.functionCall; });
+      if(!fcalls.length){
+        var reply = parts.map(function(p){ return p.text || ''; }).join('').trim();
+        if(!reply) throw new Error('Gemini ne koi jawab nahi diya. Dobara try karo.');
+        history.push({role:'user',parts:[{text:text}]}, {role:'model',parts:[{text:reply}]});
+        while(history.length > 24) history.splice(0, 2);
+        return reply;
       }
-      return 'Kaam poora nahi ho paya, dobara bolo.';
-    }catch(e){
-      history.length = start;
-      throw e;
+      turn.push({role:'model',parts:parts});
+      var out = [];
+      for(var j=0;j<fcalls.length;j++){
+        var c = fcalls[j].functionCall;
+        out.push({functionResponse:{name:c.name, response:await runTool(c.name, c.args)}});
+      }
+      turn.push({role:'user',parts:out});
     }
+    return 'Kaam poora nahi ho paya, dobara bolo.';
   }
 
   /* ---------- speech out ---------- */
-  function stopRec(){ if(rec){ var r = rec; rec = null; try{ r.onend = null; r.abort(); }catch(e){} } }
+  function unlockSpeech(){
+    if(speechUnlocked || !window.speechSynthesis) return;
+    speechUnlocked = true;
+    try{ var u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }catch(e){}
+  }
+  function spokenPart(text){
+    var t = String(text).replace(/https?:\/\/\S+/g,'').replace(/[*_`#>]/g,'').trim();
+    if(t.length <= 300) return t;
+    var cut = t.slice(0, 300), k = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('! '), cut.lastIndexOf('।'));
+    if(k < 80) k = cut.lastIndexOf(' ');
+    if(k < 1) k = 299;
+    return cut.slice(0, k + 1).trim() + ' Baaki poora jawab screen par hai.';
+  }
   function speak(text){
     return new Promise(function(resolve){
-      if(store.get('jv_speak','1') !== '1' || !window.speechSynthesis){ resolve(); return; }
+      var t = spokenPart(text);
+      if(store.get('jv_speak','1') !== '1' || !window.speechSynthesis || !t){ resolve(); return; }
       stopRec();
       speaking = true;
-      var u = new SpeechSynthesisUtterance(text.replace(/[*_`#>]/g,''));
-      u.lang = store.get('jv_lang','hi-IN');
-      var voices = speechSynthesis.getVoices(), pref = u.lang.slice(0,2);
-      for(var i=0;i<voices.length;i++){ if(voices[i].lang.indexOf(pref) === 0){ u.voice = voices[i]; break; } }
-      var done = function(){ speaking = false; resolve(); };
+      var u = new SpeechSynthesisUtterance(t);
+      u.lang = /[ऀ-ॿ]/.test(t) ? 'hi-IN' : 'en-IN';
+      var vs = speechSynthesis.getVoices(), pick = null, i;
+      for(i=0;i<vs.length;i++){ if(vs[i].lang.replace('_','-') === u.lang){ pick = vs[i]; break; } }
+      if(!pick){ for(i=0;i<vs.length;i++){ if(vs[i].lang.slice(0,2) === u.lang.slice(0,2)){ pick = vs[i]; break; } } }
+      if(pick) u.voice = pick;
+      var done = false;
+      function fin(){ if(done) return; done = true; speaking = false; quietUntil = Date.now() + 700; resolve(); }
       u.onstart = function(){ setState('speaking','Bol raha hoon...'); };
-      u.onend = done; u.onerror = done;
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
+      u.onend = fin; u.onerror = fin;
+      setTimeout(fin, 3000 + t.length * 150);
+      try{ speechSynthesis.cancel(); speechSynthesis.speak(u); }catch(e){ fin(); }
     });
   }
 
   /* ---------- main handler ---------- */
   function idleOrHands(){
-    if(hands){ setState('idle','Hands-free on: "Arise" bolke command do'); if(!rec && !speaking) startRec(true); }
-    else setState('idle','Ready. Orb dabao aur bolo');
+    if(hands){
+      if(recMode()){ if(!L) startListener(false); statusIdle(); }
+      else { setState('idle','Hands-free on: "Arise" bolo'); if(!rec && !speaking) startRec(true); }
+    } else statusIdle();
   }
   async function handle(text){
     text = (text||'').trim();
     if(!text || busy) return;
-    busy = true; stopRec();
+    busy = true; awaitUntil = 0; stopRec(); duck();
     add('me', text); setState('thinking','Soch raha hoon...');
     try{
       var reply = await ask(text);
       add('ai', reply);
       await speak(reply);
     }catch(e){
-      add('sys err', e.message || String(e));
+      add('sys err', friendly(e));
     }
-    busy = false; idleOrHands();
+    busy = false; unduck(); idleOrHands();
   }
 
-  /* ---------- speech in ---------- */
-  var WAKE = /(arise|a rise|arize|ariz|aries|uh rise|अराइज़|अराइज|अराइस|अराईज|एराइज|एराइज़)/i;
+  function routeTranscript(t){
+    var m = t.match(WAKE);
+    if(m){
+      var before = t.slice(0, m.index), after = t.slice(m.index + m[0].length);
+      var cmd = after.trim().replace(/^[\s,.\-!?]+/, '');
+      if(cmd.length < 2){
+        var b = before.trim().replace(/[\s,.\-!?]+$/, '');
+        if(b.length > 3 && !/^(hey|hi|hello|ok|okay|oye|are|arre)$/i.test(b)) cmd = b; else cmd = '';
+      }
+      ding();
+      if(cmd.length >= 2){ handle(cmd); }
+      else {
+        awaitUntil = Date.now() + 8000; setState('listening','Haan bolo...');
+        setTimeout(function(){ if(Date.now() >= awaitUntil && !busy) statusIdle(); }, 8200);
+      }
+      return;
+    }
+    if(Date.now() < awaitUntil){ awaitUntil = 0; handle(t); }
+  }
+
+  /* ---------- listening: Chrome speech recognition ---------- */
+  function stopRec(){ if(rec){ var r = rec; rec = null; try{ r.onend = null; r.abort(); }catch(e){} } }
   function startRec(continuous){
-    if(!SR){ add('sys','Is browser mein voice input nahi chalta. Chrome use karo, ya neeche type karo.'); hands = false; syncHands(); return; }
-    if(window.speechSynthesis && !continuous) speechSynthesis.cancel();
+    if(!SR){ startListener(!continuous); return; }
     stopRec();
     var r = new SR(); rec = r;
     r.lang = store.get('jv_lang','hi-IN');
     r.continuous = continuous; r.interimResults = !continuous;
     var finalText = '';
-    r.onstart = function(){ setState('listening', continuous ? 'Hands-free: "Arise" bolo...' : 'Sun raha hoon...'); };
+    r.onstart = function(){ setState('listening', continuous ? 'Hands-free on: "Arise" bolo...' : 'Sun raha hoon...'); };
     r.onresult = function(e){
       var interim = '';
       for(var i=e.resultIndex;i<e.results.length;i++){
         var res = e.results[i], t = res[0].transcript;
         if(!res.isFinal){ interim += t; continue; }
         if(!continuous){ finalText += t; continue; }
-        var m = t.match(WAKE);
-        if(m){
-          var cmd = t.slice(m.index + m[0].length).replace(/^[\s,.\-]+/,'');
-          if(cmd.length > 1) handle(cmd); else { awaitUntil = Date.now() + 8000; setState('listening','Haan bolo...'); }
-        } else if(Date.now() < awaitUntil){
-          awaitUntil = 0; handle(t);
-        }
+        setHeard(t); routeTranscript(t);
       }
       if(!continuous) $('#status').textContent = (finalText + interim) || 'Sun raha hoon...';
     };
     r.onerror = function(e){
       if(e.error === 'not-allowed' || e.error === 'service-not-allowed'){
-        store.set('jv_record','1');
-        add('sys err','Is device ka voice recognition band hai (' + e.error + '). Dusra tarika on kar diya hai: orb dobara dabao.');
-        hands = false; syncHands();
+        store.set('jv_record','1'); rec = null;
+        add('sys','Is device ka voice recognition band hai. Gemini wala tarika on kar diya hai.');
+        if(hands) startListener(false); else startListener(true);
       } else if(e.error !== 'no-speech' && e.error !== 'aborted'){
         add('sys err','Voice error: ' + e.error);
       }
@@ -398,16 +685,14 @@ label.row{flex-direction:row;align-items:center;gap:10px}
       if(continuous){
         if(hands && !speaking && !busy) setTimeout(function(){ if(hands && !rec && !speaking && !busy) startRec(true); }, 350);
       } else {
-        if(document.body.dataset.state === 'listening') setState('idle','Ready. Orb dabao aur bolo');
+        if(document.body.dataset.state === 'listening') statusIdle();
         if(finalText.trim()) handle(finalText);
       }
     };
-    try{ r.start(); }catch(e){ rec = null; setState('idle','Ready'); }
+    try{ r.start(); }catch(e){ rec = null; statusIdle(); }
   }
 
-  /* ---------- fallback: record audio, Gemini turns it into text ---------- */
-  var recorder = null, transcribing = false;
-  /*ENC_START*/
+  /* ---------- listening: record audio, Gemini turns it into text ---------- */
   function toWav16k(chunks, rate){
     var total = 0, i, j;
     for(i=0;i<chunks.length;i++) total += chunks[i].length;
@@ -436,109 +721,165 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     for(var i=0;i<bytes.length;i+=step) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
     return btoa(bin);
   }
-  /*ENC_END*/
   async function transcribe(b64){
-    var key = store.get('jv_key',''), model = store.get('jv_model','gemini-flash-latest');
-    var res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-goog-api-key':key},
-      body:JSON.stringify({contents:[{role:'user',parts:[
-        {inline_data:{mime_type:'audio/wav',data:b64}},
-        {text:'Is audio mein jo bola gaya hai use shabd ba shabd transcribe karo. Hindi ho toh Roman script (Hinglish) mein likho. Sirf transcript do. Agar kuch saaf sunai nahi diya toh sirf ye likho: NONE'}
-      ]}]})
-    });
-    var data = await res.json().catch(function(){return {}});
-    if(!res.ok) throw new Error((data.error && data.error.message) || ('Error ' + res.status));
-    var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
-    return parts.map(function(p){return p.text||''}).join('').trim();
+    var data = await gemini({contents:[{role:'user',parts:[
+      {inline_data:{mime_type:'audio/wav',data:b64}},
+      {text:'Is audio mein jo bola gaya hai use shabd ba shabd likho. Hindi ya Hinglish ho toh Roman script mein likho. Assistant ka naam "Arise" hai: agar ye naam bola gaya ho toh use hamesha "Arise" likho. Agar saaf insaani awaaz nahi hai (sirf shor, music ya adhoori awaaz) toh sirf NONE likho. Sirf transcript do, aur kuch nahi.'}
+    ]}]}, modelList('gemini-flash-lite-latest'));
+    return textOf(data);
   }
-  async function recordAndSend(){
-    if(recorder){ recorder.stop(); return; }
-    if(transcribing || busy) return;
-    if(!store.get('jv_key','')){ $('#settings').hidden = false; add('sys err','Pehle Settings mein Gemini API key daalo.'); return; }
-    if(window.speechSynthesis) speechSynthesis.cancel();
+
+  async function startListener(once){
+    if(L) return;
+    if(!store.get('jv_key','')){ $('#settings').hidden = false; add('sys err','Pehle Settings mein Gemini API key daalo.'); hands = false; syncHands(); return; }
     var stream;
-    try{ stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
-    catch(e){ add('sys err','Mic nahi khula (' + (e.name || 'error') + '). Browser mein mic Allow karo.'); return; }
+    try{ stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}}); }
+    catch(e){ add('sys err','Mic nahi khula (' + (e.name || 'error') + '). Browser mein mic Allow karo.'); hands = false; syncHands(); statusIdle(); return; }
+    if(L){ stream.getTracks().forEach(function(t){ t.stop(); }); return; }
     var AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
     try{ if(ctx.state === 'suspended') await ctx.resume(); }catch(e){}
     var src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1);
-    var chunks = [], heard = false, quiet = 0, secs = 0, done = false, rate = ctx.sampleRate;
-    function finish(){
-      if(done) return; done = true; recorder = null;
-      try{ proc.disconnect(); src.disconnect(); }catch(e){}
-      stream.getTracks().forEach(function(t){ t.stop(); });
-      try{ ctx.close(); }catch(e){}
-      if(!heard){ add('sys','Kuch sunai nahi diya. Orb dabake dobara bolo.'); setState('idle','Ready. Orb dabao aur bolo'); return; }
-      transcribing = true; setState('thinking','Samajh raha hoon...');
-      transcribe(toBase64(toWav16k(chunks, rate))).then(function(t){
-        transcribing = false;
-        if(!t || /^NONE\b/i.test(t)){ add('sys','Awaaz saaf nahi aayi. Dobara bolo.'); setState('idle','Ready. Orb dabao aur bolo'); return; }
-        handle(t);
-      }).catch(function(err){
-        transcribing = false; add('sys err', err.message || String(err)); setState('idle','Ready. Orb dabao aur bolo');
-      });
-    }
-    proc.onaudioprocess = function(e){
-      var d = e.inputBuffer.getChannelData(0), copy = new Float32Array(d), sum = 0, i;
-      chunks.push(copy); secs += copy.length / rate;
-      for(i=0;i<copy.length;i++) sum += copy[i] * copy[i];
-      if(Math.sqrt(sum / copy.length) > 0.02){ heard = true; quiet = 0; } else if(heard){ quiet += copy.length / rate; }
-      if(quiet > 1.3 || secs > 15) finish();
-    };
+    var rate = ctx.sampleRate, dur = 4096 / rate;
+    var st = {stream:stream, ctx:ctx, src:src, proc:proc, once:once, chunks:[], pre:[], inSp:false, sil:0, len:0, speechT:0, nf:0.008, processing:false, dead:false, timer:null};
+    L = st;
+    proc.onaudioprocess = function(e){ if(!st.dead) onChunk(st, new Float32Array(e.inputBuffer.getChannelData(0)), rate, dur); };
     src.connect(proc); proc.connect(ctx.destination);
-    recorder = {stop:finish};
-    setState('listening','Sun raha hoon... bolo (rukne pe apne aap bhej dunga)');
+    setState('listening', once ? 'Bolo... (rukne par apne aap bhej dunga)' : 'Hands-free on: "Arise" bolo...');
+    if(once){
+      st.timer = setTimeout(function(){
+        if(L === st && !st.inSp && !st.processing){ stopListener(); add('sys','Kuch sunai nahi diya. Orb dabake dobara bolo.'); statusIdle(); }
+      }, 9000);
+    }
+  }
+  function stopListener(){
+    var st = L; if(!st) return;
+    L = null; st.dead = true; clearTimeout(st.timer);
+    try{ st.proc.disconnect(); st.src.disconnect(); }catch(e){}
+    try{ st.stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    try{ st.ctx.close(); }catch(e){}
+    $('#lvlbar').style.width = '0';
+  }
+  function resetSeg(st){ st.chunks = []; st.pre = []; st.inSp = false; st.sil = 0; st.len = 0; st.speechT = 0; }
+  function onChunk(st, d, rate, dur){
+    var sum = 0, i;
+    for(i=0;i<d.length;i++) sum += d[i] * d[i];
+    var rms = Math.sqrt(sum / d.length);
+    $('#lvlbar').style.width = Math.min(100, rms * 900) + '%';
+    if(speaking || busy || st.processing || Date.now() < quietUntil){ resetSeg(st); return; }
+    var thr = Math.max(0.018, st.nf * 3.5), loud = rms > thr;
+    if(!st.inSp){
+      if(!loud){ st.nf = st.nf * 0.97 + rms * 0.03; st.pre.push(d); if(st.pre.length > 3) st.pre.shift(); return; }
+      st.inSp = true; st.chunks = st.pre.slice(); st.pre = []; st.sil = 0; st.len = 0; st.speechT = 0;
+    }
+    st.chunks.push(d); st.len += dur;
+    if(loud){ st.sil = 0; st.speechT += dur; } else st.sil += dur;
+    if(st.sil > 0.9 || st.len > 12){
+      var chunks = st.chunks, speechT = st.speechT;
+      resetSeg(st);
+      if(speechT < 0.3) return;
+      segmentDone(st, chunks, rate);
+    }
+  }
+  async function segmentDone(st, chunks, rate){
+    clearTimeout(st.timer);
+    var now = Date.now();
+    calls = calls.filter(function(t){ return now - t < 60000; });
+    if(calls.length >= 10){ setHeard('(bahut zyada awaaz, thoda ruk raha hoon)'); return; }
+    calls.push(now);
+    st.processing = true; setState('thinking','Samajh raha hoon...');
+    var t = '';
+    try{ t = await transcribe(toBase64(toWav16k(chunks, rate))); }
+    catch(e){ st.processing = false; add('sys err', friendly(e)); if(st.once) stopListener(); statusIdle(); return; }
+    st.processing = false;
+    t = (t || '').trim();
+    if(!t || /^none\b/i.test(t)){
+      if(st.once){ stopListener(); add('sys','Awaaz saaf nahi aayi. Orb dabake dobara bolo.'); }
+      statusIdle(); return;
+    }
+    setHeard(t);
+    if(st.once){ stopListener(); handle(t); return; }
+    statusIdle();
+    routeTranscript(t);
   }
 
+  /* ---------- hands-free + settings ---------- */
   function syncHands(){
     var b = $('#hands'); b.textContent = 'Hands-free: ' + (hands ? 'ON' : 'OFF'); b.setAttribute('aria-pressed', hands ? 'true' : 'false');
   }
+  function getWake(){
+    try{
+      if(navigator.wakeLock && !wakeLock){
+        navigator.wakeLock.request('screen').then(function(w){ wakeLock = w; w.addEventListener('release', function(){ wakeLock = null; }); }, function(){});
+      }
+    }catch(e){}
+  }
   async function toggleHands(){
-    hands = !hands; syncHands();
+    hands = !hands; syncHands(); unlockSpeech();
     if(hands){
-      try{ if(navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
-      add('sys','Hands-free on. "Arise, YouTube pe gaane chalao" jaise bolo. Screen on rakho aur tab khula rakho.');
-      startRec(true);
+      getWake();
+      add('sys','Hands-free on. Bolo: "Arise, YouTube pe gaane chalao". Is page ko khula aur screen on rakho. Video chalate waqt headphones lagao.');
+      if(recMode()) startListener(false); else startRec(true);
     } else {
-      stopRec(); try{ if(wakeLock) wakeLock.release(); }catch(e){} wakeLock = null;
-      setState('idle','Ready. Orb dabao aur bolo');
+      stopRec(); stopListener();
+      try{ if(wakeLock) wakeLock.release(); }catch(e){} wakeLock = null;
+      statusIdle();
     }
   }
-
-  /* ---------- settings + wiring ---------- */
   function loadSettings(){
-    $('#key').value = store.get('jv_key',''); $('#model').value = store.get('jv_model','gemini-flash-latest');
-    $('#lang').value = store.get('jv_lang','hi-IN'); $('#speak').checked = store.get('jv_speak','1') === '1';
+    $('#key').value = store.get('jv_key',''); $('#model').value = store.get('jv_model', DEFAULT_MODEL);
+    $('#ytkey').value = store.get('jv_ytkey',''); $('#lang').value = store.get('jv_lang','hi-IN');
+    $('#speak').checked = store.get('jv_speak','1') === '1'; $('#rec').checked = recMode();
   }
   function saveSettings(){
-    store.set('jv_key', $('#key').value.trim()); store.set('jv_model', $('#model').value.trim() || 'gemini-flash-latest');
-    store.set('jv_lang', $('#lang').value); store.set('jv_speak', $('#speak').checked ? '1' : '0');
+    store.set('jv_key', $('#key').value.trim()); store.set('jv_model', $('#model').value.trim() || DEFAULT_MODEL);
+    store.set('jv_ytkey', $('#ytkey').value.trim()); store.set('jv_lang', $('#lang').value);
+    store.set('jv_speak', $('#speak').checked ? '1' : '0'); store.set('jv_record', $('#rec').checked ? '1' : '0');
     $('#settings').hidden = true; idleOrHands();
   }
 
   $('#orb').addEventListener('click', function(){
-    if(recorder){ recorder.stop(); return; }
-    if(hands) return;
-    if(useRecordMode()){ recordAndSend(); return; }
+    unlockSpeech();
+    if(speaking){ try{ speechSynthesis.cancel(); }catch(e){} return; }
+    if(hands){ awaitUntil = Date.now() + 8000; ding(); setState('listening','Haan bolo...'); return; }
+    if(recMode()){ if(L){ stopListener(); statusIdle(); return; } startListener(true); return; }
     if(document.body.dataset.state === 'listening' && rec){ try{ rec.stop(); }catch(e){} return; }
     startRec(false);
   });
   $('#hands').addEventListener('click', toggleHands);
-  $('#form').addEventListener('submit', function(e){ e.preventDefault(); var v = $('#text').value; $('#text').value = ''; handle(v); });
+  $('#form').addEventListener('submit', function(e){ e.preventDefault(); unlockSpeech(); var v = $('#text').value; $('#text').value = ''; handle(v); });
   $('#open-settings').addEventListener('click', function(){ loadSettings(); $('#settings').hidden = false; });
   $('#save').addEventListener('click', saveSettings);
   $('#clear').addEventListener('click', function(){ history = []; $('#log').textContent = ''; add('sys','Chat saaf ho gayi.'); $('#settings').hidden = true; });
+  $('#clear-mem').addEventListener('click', function(){ store.set('jv_profile','[]'); add('sys','Yaaddasht saaf ho gayi.'); $('#settings').hidden = true; });
+  $('#v-play').addEventListener('click', function(){ vc(function(p){ if(p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); }); });
+  $('#v-back').addEventListener('click', function(){ vc(function(p){ p.seekTo(Math.max(0, p.getCurrentTime() - 10), true); }); });
+  $('#v-fwd').addEventListener('click', function(){ vc(function(p){ p.seekTo(p.getCurrentTime() + 10, true); }); });
+  $('#v-sound').addEventListener('click', function(){ vc(function(p){ p.unMute(); p.playVideo(); }); });
+  $('#v-close').addEventListener('click', closeVideo);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && hands){ getWake(); if(recMode() && !L) startListener(false); }
+  });
 
-  ['YouTube pe Arijit Singh ke gaane chalao','Delhi ka mausam batao','10 minute ka timer lagao','Mummy ka number 9876543210 save karo','Mummy ko WhatsApp pe bolo main late aaunga','Yaad rakhna kal doodh lana hai','250 ka 18 percent kitna hua'].forEach(function(t){
+  [
+    'MrBeast ka sabse viral video chalao',
+    'T-Series ka latest video chalao',
+    'Chai pe 30 second ka Shorts script likho',
+    'Aaj ka cricket score kya hai',
+    'Delhi ka mausam batao',
+    '10 minute ka timer lagao',
+    'Yaad rakhna kal doodh lana hai',
+    'Mummy ka number 9876543210 save karo',
+    'Mummy ko WhatsApp pe bolo main late aaunga',
+    '250 ka 18 percent kitna hua'
+  ].forEach(function(t){
     var c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = t;
-    c.addEventListener('click', function(){ handle(t); }); $('#chips').appendChild(c);
+    c.addEventListener('click', function(){ unlockSpeech(); handle(t); }); $('#chips').appendChild(c);
   });
 
   if(window.speechSynthesis){ speechSynthesis.getVoices(); }
   if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
   loadSettings();
-  add('sys','Namaste, main Arise hoon. Bolo ya type karo, main kaam karunga: YouTube, WhatsApp, call, maps, timer, mausam, notes, hisaab.');
+  add('sys','Namaste, main Arise hoon. "Hands-free" ON karke bolo: "Arise, MrBeast ka sabse viral video chalao". Ya orb dabao, ya type karo.');
   if(!store.get('jv_key','')) $('#settings').hidden = false;
 })();
 </script>
