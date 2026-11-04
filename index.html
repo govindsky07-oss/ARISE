@@ -91,7 +91,14 @@ label.row{flex-direction:row;align-items:center;gap:10px}
 .card input[type=password],.card input[type=text],.card select{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 11px;width:100%}
 .card a{color:var(--cyan)}
 .actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
-@media (prefers-reduced-motion:reduce){.orb i{animation:none!important}}
+.alarmbar{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--amber);border-radius:10px;color:var(--amber);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 18px rgba(255,178,62,.55)}}
+#alarmlist{font:12px var(--mono);color:var(--dim);text-align:center;overflow-wrap:anywhere}
+.card .crow{display:flex;gap:6px;flex-wrap:wrap}
+.card .crow input{flex:1 1 120px;min-width:0;width:auto}
+.citem{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+.citem span{min-width:0;overflow-wrap:anywhere}
+@media (prefers-reduced-motion:reduce){.orb i,.alarmbar{animation:none!important}}
 </style>
 </head>
 <body data-state="idle">
@@ -105,6 +112,8 @@ label.row{flex-direction:row;align-items:center;gap:10px}
   <div id="status" class="tiny">Orb dabao aur bolo</div>
   <div class="lvl" aria-hidden="true"><i id="lvlbar"></i></div>
   <div id="heard"></div>
+  <div id="alarmbar" class="alarmbar" hidden><span id="alarmtext"></span><button class="ghost" id="alarm-stop" type="button">Alarm band karo</button></div>
+  <div id="alarmlist"></div>
   <button class="ghost" id="hands" type="button" aria-pressed="false">Hands-free: OFF</button>
   <div class="chips" id="chips"></div>
 </section>
@@ -152,6 +161,17 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     </label>
     <label class="row"><input id="rec" type="checkbox"> Gemini se awaaz samjho (iPad/iPhone ke liye zaroori)</label>
     <label class="row"><input id="speak" type="checkbox" checked> Jawab bolke sunao</label>
+    <label class="row"><input id="duck" type="checkbox" checked> Baat karte waqt video pause karo</label>
+    <div class="contacts">
+      <span class="tiny">Contacts (call aur WhatsApp ke liye)</span>
+      <div class="crow">
+        <input id="c-name" type="text" placeholder="Naam (jaise Mummy)" autocomplete="off">
+        <input id="c-num" type="text" inputmode="tel" placeholder="Number (jaise 9876543210)" autocomplete="off">
+        <button class="ghost" id="c-add" type="button">Add</button>
+      </div>
+      <span id="c-msg" class="tiny"></span>
+      <div id="c-list"></div>
+    </div>
     <div class="actions">
       <button class="ghost" id="clear" type="button">Chat saaf karo</button>
       <button class="ghost" id="clear-mem" type="button">Yaaddasht bhulo</button>
@@ -182,6 +202,9 @@ label.row{flex-direction:row;align-items:center;gap:10px}
   var history = [], busy = false, speaking = false, quietUntil = 0, hands = false;
   var awaitUntil = 0, wakeLock = null, rec = null, L = null, calls = [];
   var videoPausedByUs = false, videoTouched = false, speechUnlocked = false;
+  var alarms = [], ringing = null, ringMute = 0, batt = null, battFired = false, AUD = null;
+  var battThr = +store.get('jv_batt','0') || 0;
+  var STOPRE = /\b(band|stop|bas|chup|ruk|ruko|shant|off)\b|बंद|रुको|बस|चुप/i;
   var WAKE = /\b(arise|a rise|arize|ariz|arice|aries|arais|erise)\b|अराइज़?|अराईज़?|अराइस|एराइज़?|अरेज़?/i;
 
   /* ---------- prompt ---------- */
@@ -201,6 +224,11 @@ label.row{flex-direction:row;align-items:center;gap:10px}
       '- Jawab bolke sunaya jayega. Pehle 1 se 2 chhote vaakya mein seedha jawab ya confirmation do. Lambi cheez maangi gayi ho toh detail mein likh sakte ho, par sirf shuruaat ke vaakya sunaye jayenge.\n' +
       '- Markdown (*, #, backticks) aur emoji mat use karo.\n' +
       '- Zaroori jaankari na ho (jaise phone number) toh ek chhota sawal poochho.\n' +
+      '- Alarm ke liye set_alarm (time 24-ghante HH:MM mein), timer ke liye set_timer, band karne ke liye stop_alarm. Alarm tabhi bajta hai jab Arise ka page khula ho.\n' +
+      '- Battery ke liye set_battery_alert (jaise 80 percent). Agar tool bataye ki browser support nahi karta toh seedha wahi bata do.\n' +
+      '- Viral ideas maange toh find_viral_ideas use karo (5 ideas aur sabse achhe ka script screen par aayega). User ke channel ka niche pata ho toh wahi use karo, nahi pata toh ek chhota sawal poochho aur remember_about_me se yaad rakho.\n' +
+      '- WhatsApp par aaye hue messages padhna ya unka jawab dena Arise nahi kar sakta. User pooche toh saaf bata do aur iPhone/iPad ka Siri "Announce Notifications" suggest karo. Message bhejne ke liye whatsapp_message use karo (user ko send dabana hota hai).\n' +
+      (Object.keys(getContacts()).length ? 'Saved contacts (naam): ' + Object.keys(getContacts()).join(', ') + '. User koi aur naam bole (jaise Mom) toh sabse milta naam chuno.\n' : '') +
       'Abhi ka samay (India): ' + nowString() + '.' +
       (prof.length ? '\nUser ke baare mein jo pata hai: ' + prof.join('; ') + '.' : '');
   }
@@ -238,17 +266,30 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     try{ window.open(url, '_blank', 'noopener'); }catch(e){}
     $('#log').scrollTop = $('#log').scrollHeight;
   }
+  function getAudio(){
+    if(AUD) return AUD;
+    var C = window.AudioContext || window.webkitAudioContext; if(!C) return null;
+    try{ AUD = new C(); }catch(e){ AUD = null; }
+    return AUD;
+  }
+  function unlockAudio(){
+    var c = getAudio(); if(!c) return;
+    try{
+      if(c.state === 'suspended') c.resume();
+      var b = c.createBuffer(1, 1, 22050), src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0);
+    }catch(e){}
+  }
   function tone(count){
     try{
-      var own = !L, C = window.AudioContext || window.webkitAudioContext, c = L ? L.ctx : new C(), t = 0;
+      var c = getAudio(); if(!c) return;
+      if(c.state === 'suspended') c.resume();
+      var t = 0;
       for(var i=0;i<count;i++){
-        var o = c.createOscillator(), g = c.createGain();
+        var o = c.createOscillator(), g = c.createGain(), len = count > 1 ? 0.2 : 0.12, st = c.currentTime + t;
         o.frequency.value = count > 1 ? 880 : 1180; o.connect(g); g.connect(c.destination);
-        var len = count > 1 ? 0.2 : 0.12;
-        g.gain.setValueAtTime(0.22, c.currentTime + t); g.gain.setValueAtTime(0, c.currentTime + t + len);
-        o.start(c.currentTime + t); o.stop(c.currentTime + t + len + 0.03); t += 0.4;
+        g.gain.setValueAtTime(0.3, st); g.gain.setValueAtTime(0, st + len);
+        o.start(st); o.stop(st + len + 0.03); t += 0.4;
       }
-      if(own) setTimeout(function(){ try{ c.close(); }catch(e){} }, t * 1000 + 300);
     }catch(e){}
   }
   function beep(){ tone(4); }
@@ -342,6 +383,7 @@ label.row{flex-direction:row;align-items:center;gap:10px}
   function vc(fn){ try{ if(ytPlayer && ytIsReady) fn(ytPlayer); }catch(e){} }
   function duck(){
     videoTouched = false;
+    if(store.get('jv_duck','1') !== '1') return;
     try{ if(ytPlayer && ytIsReady && ytPlayer.getPlayerState() === 1){ ytPlayer.pauseVideo(); videoPausedByUs = true; } }catch(e){}
   }
   function unduck(){
@@ -402,6 +444,13 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     {name:'video_control',description:'Chal rahe video ko control karo.',parameters:{type:'OBJECT',properties:{action:{type:'STRING',description:'pause, play, forward, back, mute, unmute ya stop'},seconds:{type:'NUMBER',description:'forward/back ke liye seconds, default 10'}},required:['action']}},
     {name:'web_lookup',description:'Internet se latest jaankari lao: khabar, score, price, facts. Jawab Hinglish mein chhota milta hai.',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
     {name:'write_script',description:'Video, Shorts, Reel ya podcast ka poora script likho aur screen par dikhao.',parameters:{type:'OBJECT',properties:{topic:{type:'STRING'},platform:{type:'STRING',description:'YouTube, Shorts, Reel, etc.'},length:{type:'STRING',description:'jaise 60 second ya 5 minute'},language:{type:'STRING',description:'default Hinglish'}},required:['topic']}},
+    {name:'set_alarm',description:'Alarm lagao. time = 24-ghante HH:MM (jaise 06:30) ya in_minutes = kitne minute baad.',parameters:{type:'OBJECT',properties:{time:{type:'STRING',description:'HH:MM, 24-hour'},in_minutes:{type:'NUMBER'},label:{type:'STRING'}}}},
+    {name:'list_alarms',description:'Lage hue alarm batao.'},
+    {name:'cancel_alarm',description:'Lagaya hua alarm hatao. label na do toh saare hat jayenge.',parameters:{type:'OBJECT',properties:{label:{type:'STRING'}}}},
+    {name:'stop_alarm',description:'Abhi baj raha alarm band karo.'},
+    {name:'set_battery_alert',description:'Jab charge diye hue percent par pahunche toh 5 minute ka alarm bajao.',parameters:{type:'OBJECT',properties:{percent:{type:'NUMBER'}},required:['percent']}},
+    {name:'cancel_battery_alert',description:'Battery alert hatao.'},
+    {name:'find_viral_ideas',description:'Abhi ke trend se 5 viral video ideas dhoondo aur sabse achhe ka poora script likho.',parameters:{type:'OBJECT',properties:{topic:{type:'STRING',description:'Channel ka niche ya topic'},platform:{type:'STRING'},length:{type:'STRING'}}}},
     {name:'remember_about_me',description:'User ke baare mein ek zaroori baat yaad rakho (naam, pasand, kaam).',parameters:{type:'OBJECT',properties:{fact:{type:'STRING'}},required:['fact']}},
     {name:'open_website',description:'Koi website kholo.',parameters:{type:'OBJECT',properties:{url:{type:'STRING',description:'Poora URL ya domain'}},required:['url']}},
     {name:'web_search',description:'Google search ka page kholo (jab user bole google pe search karo).',parameters:{type:'OBJECT',properties:{query:{type:'STRING'}},required:['query']}},
@@ -418,15 +467,19 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     {name:'current_time',description:'Abhi ka time aur date batao.'}
   ]}];
 
+  function normNum(raw){
+    var d = String(raw || '').replace(/[^\d+]/g,''), digits = d.replace(/\D/g,'');
+    if(digits.length < 10) return null;
+    if(d[0] === '+') return digits;
+    return digits.length === 10 ? '91' + digits : digits;
+  }
+  function getContacts(){ var c = jget('jv_contacts', {}); return (c && typeof c === 'object') ? c : {}; }
   function phoneFrom(to){
-    var contacts = jget('jv_contacts', {});
-    var key = (to||'').toLowerCase().trim();
-    if(contacts[key]) return contacts[key];
-    var digits = (to||'').replace(/[^\d+]/g,'');
-    if(digits.replace(/\D/g,'').length >= 10){
-      if(digits[0] === '+') return digits.slice(1);
-      return digits.length === 10 ? '91' + digits : digits;
-    }
+    var c = getContacts(), key = (to || '').toLowerCase().trim();
+    if(c[key]) return c[key];
+    var n = normNum(to); if(n) return n;
+    var ks = Object.keys(c);
+    for(var i=0;i<ks.length;i++){ if(key && (ks[i].indexOf(key) > -1 || key.indexOf(ks[i]) > -1)) return c[ks[i]]; }
     return null;
   }
   var tools = {
@@ -485,6 +538,56 @@ label.row{flex-direction:row;align-items:center;gap:10px}
       store.set('jv_profile', JSON.stringify(p.slice(-30)));
       return {status:'yaad rakh liya'};
     },
+    set_timer:function(a){
+      var s = Math.max(1, Math.round(a.seconds)), label = a.label || 'Timer khatam ho gaya';
+      alarms.push({id:Date.now(), label:label, at:Date.now() + s * 1000}); saveAlarms(); getWake();
+      add('act','Timer set: ' + label + ' (' + (s >= 60 ? Math.round(s/60) + ' min' : s + ' sec') + ')');
+      return {status:'timer set', seconds:s, note:'Ye tabhi bajega jab Arise ka page khula rahe. Band karne ke liye user "Arise, alarm band karo" bol sakta hai.'};
+    },
+    set_alarm:function(a){
+      var at = null;
+      if(a.in_minutes){ at = Date.now() + Math.max(0.05, a.in_minutes) * 60000; }
+      else if(a.time){ at = parseClock(a.time); }
+      if(!at) return {error:'Time samajh nahi aaya. HH:MM (jaise 06:30) ya kitne minute baad batao.'};
+      alarms.push({id:Date.now(), label:a.label || 'Alarm', at:at}); saveAlarms(); getWake();
+      add('act','Alarm set: ' + fmtTime(at) + ' (' + (a.label || 'Alarm') + ')');
+      return {status:'alarm set', time:fmtTime(at), note:'Ye tabhi bajega jab Arise ka page khula rahe aur screen on ho. Zaroori subah ke alarm ke liye iPad/phone ka Clock app bhi lagao.'};
+    },
+    list_alarms:function(){
+      return {alarms:alarms.map(function(x){ return {label:x.label, time:fmtTime(x.at)}; }), battery_alert:battThr || null};
+    },
+    cancel_alarm:function(a){
+      var before = alarms.length, lab = (a.label || '').toLowerCase();
+      alarms = alarms.filter(function(x){ return lab && x.label.toLowerCase().indexOf(lab) === -1; });
+      saveAlarms();
+      return {status:'hata diya', removed:before - alarms.length};
+    },
+    stop_alarm:function(){ return stopAlarm() ? {status:'alarm band ho gaya'} : {status:'Abhi koi alarm nahi baj raha.'}; },
+    set_battery_alert:async function(a){
+      var p = Math.round(a.percent);
+      if(!(p >= 1 && p <= 100)) return {error:'percent 1 se 100 ke beech do'};
+      if(!navigator.getBattery) return {error:'unsupported', note:'Is browser mein (iPad/iPhone ka Safari ya Chrome) battery ka percent mil hi nahi sakta, isliye Arise ye nahi kar sakta. Android Chrome ya PC par chalega. iPad/iPhone ke liye Shortcuts app ka Battery Level automation use karna padega.'};
+      battThr = p; store.set('jv_batt', String(p)); battFired = false;
+      var ok = await initBattery();
+      if(!ok) return {error:'Battery ka data nahi mila.'};
+      renderAlarms(); getWake(); checkBattery();
+      return {status:'battery alert set', percent:p, current_level:Math.round(batt.level * 100), charging:batt.charging, note:'Arise ka page khula rakhna padega.'};
+    },
+    cancel_battery_alert:function(){ battThr = 0; store.set('jv_batt','0'); renderAlarms(); return {status:'battery alert hata diya'}; },
+    find_viral_ideas:async function(a){
+      setState('thinking','Viral ideas dhoondh raha hoon...');
+      var prof = jget('jv_profile', []);
+      var p = 'Aaj ki taareekh: ' + nowString() + '.\nNiche/topic: ' + (a.topic || 'user ka channel') + '\nPlatform: ' + (a.platform || 'YouTube Shorts aur YouTube') + '\n' +
+        'Google search se abhi ke trending aur viral topics/formats dhoondo (India ke audience ke liye).\n' +
+        'Pehle 5 viral video ideas do: har ek ka title ya hook aur ek line mein kyun viral ho sakta hai.\n' +
+        'Phir sabse achhe idea (number 1) ka poora script likho: HOOK (pehle 3 second), BODY (scene by scene: bolne wali line aur screen par kya dikhega), CTA. Lambai: ' + (a.length || '45 second') + '.\n' +
+        'Hinglish (Roman script) mein plain text likho, markdown symbols (*, #) mat use karo.' + (prof.length ? '\nUser ke baare mein: ' + prof.join('; ') + '.' : '');
+      var data = await gemini({contents:[{role:'user',parts:[{text:p}]}], tools:[{google_search:{}}]});
+      var t = textOf(data);
+      if(!t) return {error:'Ideas nahi mile, dobara try karo.'};
+      add('ai', t);
+      return {status:'5 viral ideas aur number 1 ka script screen par likh diya (Copy button neeche hai). User ko bolo ki screen par dekhe.'};
+    },
     open_website:function(a){
       var u = /^https?:\/\//i.test(a.url) ? a.url : 'https://' + a.url;
       openLink('Website:', u); return {status:'link diya', url:u};
@@ -507,17 +610,12 @@ label.row{flex-direction:row;align-items:center;gap:10px}
       return {status:'email draft ka link diya'};
     },
     save_contact:function(a){
-      var contacts = jget('jv_contacts', {});
-      var d = (a.phone||'').replace(/[^\d+]/g,''), digits = d.replace(/\D/g,'');
-      contacts[(a.name||'').toLowerCase().trim()] = d[0] === '+' ? digits : (digits.length === 10 ? '91' + digits : digits);
-      store.set('jv_contacts', JSON.stringify(contacts));
+      var n = normNum(a.phone);
+      if(!n) return {error:'Number poora (10 digit) nahi hai. User se dobara poochho.'};
+      var contacts = getContacts();
+      contacts[(a.name||'').toLowerCase().trim()] = n;
+      store.set('jv_contacts', JSON.stringify(contacts)); renderContacts();
       return {status:'saved', name:a.name};
-    },
-    set_timer:function(a){
-      var s = Math.max(1, Math.round(a.seconds)), label = a.label || 'Timer';
-      setTimeout(function(){ beep(); add('ai', label + ' khatam ho gaya.'); if(!speaking && !busy) speak(label + ' khatam ho gaya.'); }, s * 1000);
-      add('act','Timer set: ' + label + ' (' + (s >= 60 ? Math.round(s/60) + ' min' : s + ' sec') + ')');
-      return {status:'timer set', seconds:s};
     },
     save_note:function(a){
       var n = jget('jv_notes', []);
@@ -575,6 +673,7 @@ label.row{flex-direction:row;align-items:center;gap:10px}
 
   /* ---------- speech out ---------- */
   function unlockSpeech(){
+    unlockAudio();
     if(speechUnlocked || !window.speechSynthesis) return;
     speechUnlocked = true;
     try{ var u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }catch(e){}
@@ -617,6 +716,9 @@ label.row{flex-direction:row;align-items:center;gap:10px}
   }
   async function handle(text){
     text = (text||'').trim();
+    if(text && ringing && STOPRE.test(text)){
+      stopAlarm(); add('me', text); add('ai','Alarm band kar diya.'); statusIdle(); return;
+    }
     if(!text || busy) return;
     busy = true; awaitUntil = 0; stopRec(); duck();
     add('me', text); setState('thinking','Soch raha hoon...');
@@ -631,6 +733,7 @@ label.row{flex-direction:row;align-items:center;gap:10px}
   }
 
   function routeTranscript(t){
+    if(ringing && STOPRE.test(t)){ handle(t); return; }
     var m = t.match(WAKE);
     if(m){
       var before = t.slice(0, m.index), after = t.slice(m.index + m[0].length);
@@ -765,7 +868,7 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     for(i=0;i<d.length;i++) sum += d[i] * d[i];
     var rms = Math.sqrt(sum / d.length);
     $('#lvlbar').style.width = Math.min(100, rms * 900) + '%';
-    if(speaking || busy || st.processing || Date.now() < quietUntil){ resetSeg(st); return; }
+    if(speaking || busy || st.processing || Date.now() < quietUntil || Date.now() < ringMute){ resetSeg(st); return; }
     var thr = Math.max(0.018, st.nf * 3.5), loud = rms > thr;
     if(!st.inSp){
       if(!loud){ st.nf = st.nf * 0.97 + rms * 0.03; st.pre.push(d); if(st.pre.length > 3) st.pre.shift(); return; }
@@ -802,6 +905,94 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     routeTranscript(t);
   }
 
+  /* ---------- alarms + battery ---------- */
+  function fmtTime(ms){ return new Date(ms).toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'}); }
+  function parseClock(t){
+    var m = String(t || '').trim().match(/^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?$/i);
+    if(!m) return null;
+    var h = +m[1], mi = +(m[2] || 0), ap = (m[3] || '').toLowerCase();
+    if(ap === 'pm' && h < 12) h += 12;
+    if(ap === 'am' && h === 12) h = 0;
+    if(h > 23 || mi > 59) return null;
+    var d = new Date(); d.setHours(h, mi, 0, 0);
+    if(d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  function saveAlarms(){ store.set('jv_alarms', JSON.stringify(alarms)); renderAlarms(); }
+  function renderAlarms(){
+    var parts = alarms.map(function(a){ return fmtTime(a.at) + ' (' + a.label + ')'; });
+    if(battThr) parts.push('Battery ' + battThr + '%');
+    $('#alarmlist').textContent = parts.length ? 'Alarms: ' + parts.join(', ') : '';
+  }
+  function startAlarm(label, secs){
+    stopAlarm();
+    ringing = {label:label, until:Date.now() + (secs || 300) * 1000, n:0, timer:null};
+    $('#alarmtext').textContent = label; $('#alarmbar').hidden = false;
+    add('ai','Alarm: ' + label + ' (band karne ke liye bolo "Arise, alarm band karo" ya button dabao)');
+    ringTick(); ringing.timer = setInterval(ringTick, 4000);
+  }
+  function ringTick(){
+    var r = ringing; if(!r) return;
+    if(Date.now() > r.until){ stopAlarm(); add('sys','Alarm 5 minute baad apne aap band ho gaya.'); return; }
+    ringMute = Date.now() + 1400;
+    tone(3);
+    try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
+    if(r.n % 4 === 0 && window.speechSynthesis && !speaking){
+      try{
+        var u = new SpeechSynthesisUtterance(r.label.replace(/[*_`#>]/g,''));
+        u.lang = /[\u0900-\u097F]/.test(r.label) ? 'hi-IN' : 'en-IN';
+        ringMute = Date.now() + Math.min(6000, 1500 + r.label.length * 90);
+        speechSynthesis.speak(u);
+      }catch(e){}
+    }
+    r.n++;
+  }
+  function stopAlarm(){
+    var r = ringing; if(!r) return false;
+    clearInterval(r.timer); ringing = null; ringMute = 0; $('#alarmbar').hidden = true;
+    try{ speechSynthesis.cancel(); }catch(e){}
+    return true;
+  }
+  function checkAlarms(){
+    if(!alarms.length) return;
+    var now = Date.now(), due = [], keep = [];
+    alarms.forEach(function(a){ (a.at <= now ? due : keep).push(a); });
+    if(!due.length) return;
+    alarms = keep; saveAlarms();
+    due.forEach(function(a){
+      if(now - a.at > 10 * 60000) add('sys','Alarm miss ho gaya (page band tha): ' + a.label);
+      else startAlarm(a.label, 300);
+    });
+  }
+  async function initBattery(){
+    if(batt) return true;
+    if(!navigator.getBattery) return false;
+    try{ batt = await navigator.getBattery(); }catch(e){ return false; }
+    batt.addEventListener('levelchange', checkBattery); batt.addEventListener('chargingchange', checkBattery);
+    setInterval(checkBattery, 30000);
+    return true;
+  }
+  function checkBattery(){
+    if(!batt || !battThr) return;
+    var lvl = Math.round(batt.level * 100);
+    if(batt.charging && lvl >= battThr){
+      if(!battFired){ battFired = true; startAlarm('Charge ' + lvl + ' percent ho gaya. Charger nikal do.', 300); }
+    } else if(!batt.charging || lvl < battThr - 1){ battFired = false; }
+  }
+
+  /* ---------- contacts ---------- */
+  function renderContacts(){
+    var c = getContacts(), box = $('#c-list'), ks = Object.keys(c);
+    box.textContent = '';
+    ks.forEach(function(k){
+      var row = document.createElement('div'); row.className = 'citem';
+      var sp = document.createElement('span'); sp.textContent = k + ': +' + c[k];
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'ghost'; b.textContent = 'Hatao'; b.setAttribute('data-k', k);
+      row.appendChild(sp); row.appendChild(b); box.appendChild(row);
+    });
+    if(!ks.length) box.textContent = 'Abhi koi contact nahi.';
+  }
+
   /* ---------- hands-free + settings ---------- */
   function syncHands(){
     var b = $('#hands'); b.textContent = 'Hands-free: ' + (hands ? 'ON' : 'OFF'); b.setAttribute('aria-pressed', hands ? 'true' : 'false');
@@ -829,11 +1020,12 @@ label.row{flex-direction:row;align-items:center;gap:10px}
     $('#key').value = store.get('jv_key',''); $('#model').value = store.get('jv_model', DEFAULT_MODEL);
     $('#ytkey').value = store.get('jv_ytkey',''); $('#lang').value = store.get('jv_lang','hi-IN');
     $('#speak').checked = store.get('jv_speak','1') === '1'; $('#rec').checked = recMode();
+    $('#duck').checked = store.get('jv_duck','1') === '1'; renderContacts();
   }
   function saveSettings(){
     store.set('jv_key', $('#key').value.trim()); store.set('jv_model', $('#model').value.trim() || DEFAULT_MODEL);
     store.set('jv_ytkey', $('#ytkey').value.trim()); store.set('jv_lang', $('#lang').value);
-    store.set('jv_speak', $('#speak').checked ? '1' : '0'); store.set('jv_record', $('#rec').checked ? '1' : '0');
+    store.set('jv_speak', $('#speak').checked ? '1' : '0'); store.set('jv_record', $('#rec').checked ? '1' : '0'); store.set('jv_duck', $('#duck').checked ? '1' : '0');
     $('#settings').hidden = true; idleOrHands();
   }
 
@@ -856,6 +1048,18 @@ label.row{flex-direction:row;align-items:center;gap:10px}
   $('#v-fwd').addEventListener('click', function(){ vc(function(p){ p.seekTo(p.getCurrentTime() + 10, true); }); });
   $('#v-sound').addEventListener('click', function(){ vc(function(p){ p.unMute(); p.playVideo(); }); });
   $('#v-close').addEventListener('click', closeVideo);
+  $('#alarm-stop').addEventListener('click', function(){ stopAlarm(); statusIdle(); });
+  $('#c-add').addEventListener('click', function(){
+    var name = $('#c-name').value.trim().toLowerCase(), num = normNum($('#c-num').value);
+    if(!name || !num){ $('#c-msg').textContent = 'Naam aur poora number (10 digit) daalo.'; return; }
+    var c = getContacts(); c[name] = num; store.set('jv_contacts', JSON.stringify(c));
+    $('#c-name').value = ''; $('#c-num').value = ''; $('#c-msg').textContent = name + ' save ho gaya.'; renderContacts();
+  });
+  $('#c-list').addEventListener('click', function(e){
+    var k = e.target && e.target.getAttribute && e.target.getAttribute('data-k');
+    if(!k) return;
+    var c = getContacts(); delete c[k]; store.set('jv_contacts', JSON.stringify(c)); renderContacts();
+  });
   document.addEventListener('visibilitychange', function(){
     if(document.visibilityState === 'visible' && hands){ getWake(); if(recMode() && !L) startListener(false); }
   });
@@ -878,6 +1082,9 @@ label.row{flex-direction:row;align-items:center;gap:10px}
 
   if(window.speechSynthesis){ speechSynthesis.getVoices(); }
   if('serviceWorker' in navigator && /^https?:/.test(location.protocol)){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
+  alarms = jget('jv_alarms', []); if(!Array.isArray(alarms)) alarms = [];
+  checkAlarms(); renderAlarms(); setInterval(checkAlarms, 1000);
+  if(battThr) initBattery().then(function(ok){ if(ok) getWake(); renderAlarms(); });
   loadSettings();
   add('sys','Namaste, main Arise hoon. "Hands-free" ON karke bolo: "Arise, MrBeast ka sabse viral video chalao". Ya orb dabao, ya type karo.');
   if(!store.get('jv_key','')) $('#settings').hidden = false;
